@@ -1,8 +1,7 @@
 clc; clear; close all;
 
-t = linspace(-2, 2, 100)';
-y = sin(3*t) + 0.1 * randn(size(t));
-X = t;
+X = linspace(-2, 2, 100)';
+y = sin(3*X) + 0.1 * randn(size(X));
 
 kernel_function = RBFKernel(0.5);
 svr = SVR(kernel_function, 1, 0.1);
