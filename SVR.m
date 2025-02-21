@@ -34,7 +34,7 @@ classdef SVR < handle
             
             options = optimoptions('quadprog', 'Display', 'off');
             alpha = quadprog(H, -f, [], [], Aeq, beq, lb, ub, [], options);
-
+            
             alpha_pos = alpha(1:length(Y));
             alpha_neg = alpha(length(Y)+1:end);
             obj.alpha_svr = alpha_pos - alpha_neg;
