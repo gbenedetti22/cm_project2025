@@ -1,5 +1,5 @@
 classdef SVR < handle
-    properties(Access=private)
+    properties(Access=protected)
         kernel_function
         C double
         epsilon double
