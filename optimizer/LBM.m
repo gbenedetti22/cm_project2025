@@ -5,10 +5,11 @@ classdef LBM < handle
         tol
         theta
         max_constraints
+        qp_ratio
     end
     
     methods
-        function obj = LBM(max_iter, epsilon, tol, theta, max_constraints)
+        function obj = LBM(max_iter, epsilon, tol, theta, max_constraints, qp_ratio)
             if nargin < 1
                 max_iter = 500;
             end
@@ -24,12 +25,16 @@ classdef LBM < handle
             if nargin < 5
                 max_constraints = inf;
             end
+            if nargin < 6
+                qp_ratio = 10; % Default: usa quadprog nel 10% dei cicli
+            end
 
             obj.max_iter = max_iter;
             obj.epsilon = epsilon;
             obj.tol = tol;
             obj.theta = theta;
             obj.max_constraints = max_constraints;
+            obj.qp_ratio = qp_ratio;
         end
         
         function alpha = optimize(obj, K, y, C)
@@ -50,8 +55,9 @@ classdef LBM < handle
                 waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + (iter) + "/" + obj.max_iter + ")");
 
                 level = obj.theta * f + (1 - obj.theta) * f_best;
+                % z_new = obj.mp_solve(z, bundle, t, C);
+                z_new = obj.mp_solve(z, bundle, t, C, iter, obj.qp_ratio);
 
-                z_new = obj.mp_solve(z, bundle, t, C);
 
                 step = z_new - z;
 
@@ -116,41 +122,147 @@ classdef LBM < handle
             z_proj = [alpha; alphaStar];
         end
 
-
-        function z_opt = mp_solve(~, z_current, bundle, t, C)
+        % function z_opt = mp_solve(~, z_current, bundle, t, C)
+        %     n2 = length(z_current);
+        %     n = n2/2;
+        %     m = length(bundle.f);
+        % 
+        %     H = sparse(1:n2, 1:n2, 1/t, n2, n2);
+        %     H = blkdiag(H, 0);
+        % 
+        %     f = sparse([-(1/t) * z_current; 1]);
+        % 
+        %     A_bundle = sparse([bundle.g' -ones(m,1)]);
+        %     b_bundle = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
+        % 
+        %     Aeq = sparse([ones(1,n), -ones(1,n), 0]);
+        %     beq = 0;
+        % 
+        %     lb = sparse([zeros(n2,1); -inf]);
+        %     ub = sparse([C * ones(n2,1);  inf]);
+        % 
+        %     if exist('mosekopt', 'file') == 3
+        %         options = mskoptimset('Display', 'off');
+        %     else
+        %         options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-point-convex');
+        %     end
+        % 
+        %     [z_sol, ~, exitflag] = quadprog(H, f, A_bundle, b_bundle, Aeq, beq, lb, ub, [], options);
+        % 
+        %     if exitflag <= 0
+        %         warning('quadprog non ha trovato una soluzione valida. Manteniamo la soluzione corrente.');
+        %         z_opt = z_current;
+        %     else
+        %         z_opt = z_sol(1:n2);
+        %     end
+        % end
+        function z_opt = mp_solve(obj, z_current, bundle, t, C, iter, qp_ratio)
             n2 = length(z_current);
-            n = n2/2;
+            n = n2 / 2;
             m = length(bundle.f);
-
-            H = sparse(1:n2, 1:n2, 1/t, n2, n2);
-            H = blkdiag(H, 0);
-
-            f = sparse([-(1/t) * z_current; 1]);
             
-            A_bundle = sparse([bundle.g' -ones(m,1)]);
-            b_bundle = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
-
-            Aeq = sparse([ones(1,n), -ones(1,n), 0]);
-            beq = 0;
-
-            lb = sparse([zeros(n2,1); -inf]);
-            ub = sparse([C * ones(n2,1);  inf]);
-
-            if exist('mosekopt', 'file') == 3
-                options = mskoptimset('Display', 'off');
-            else
-                options = optimoptions('Display', 'off', 'Algorithm', 'interior-point-convex');
+            % Calcola se in questo iter si deve usare quadprog in base a qp_ratio
+            use_quadprog = (mod(iter, round(100 / qp_ratio)) == 0);
+            
+            % Se qp_ratio è 100, allora usa sempre quadprog
+            if qp_ratio == 100
+                use_quadprog = true;
             end
+        
+            % Se qp_ratio è 0, usa sempre subgradiente
+            if qp_ratio == 0
+                use_quadprog = false;
+            end
+        
+            % Inizializza soluzione
+            z_opt = z_current;
             
-            [z_sol, ~, exitflag] = quadprog(H, f, A_bundle, b_bundle, Aeq, beq, lb, ub, [], options);
-
-            if exitflag <= 0
-                warning('quadprog non ha trovato una soluzione valida. Manteniamo la soluzione corrente.');
-                z_opt = z_current;
+            if use_quadprog
+                % Usa quadprog per la soluzione più precisa
+                H = sparse(1:n2, 1:n2, 1/t, n2, n2);
+                H = blkdiag(H, 0);
+                f = sparse([-(1/t) * z_current; 1]);
+        
+                A_bundle = sparse([bundle.g' -ones(m,1)]);
+                b_bundle = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
+        
+                Aeq = sparse([ones(1,n), -ones(1,n), 0]);
+                beq = 0;
+        
+                lb = sparse([zeros(n2,1); -inf]);
+                ub = sparse([C * ones(n2,1); inf]);
+        
+                options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-point-convex');
+        
+                [z_sol, ~, exitflag] = quadprog(H, f, A_bundle, b_bundle, Aeq, beq, lb, ub, [], options);
+        
+                if exitflag > 0
+                    z_opt = z_sol(1:n2);
+                else
+                    % Se quadprog fallisce, usa subgradiente come backup
+                    z_opt = subgradient_step(obj, z_current, bundle, t, C);
+                end
             else
-                z_opt = z_sol(1:n2);
+                % Usa solo subgradiente
+                z_opt = subgradient_step(obj, z_current, bundle, t, C);
             end
         end
+
+        function z_sg = subgradient_step(obj, z_current, bundle, t, C)
+            % Use weighted average of subgradients in the bundle
+            bundle_size = size(bundle.g, 2);
+            if bundle_size > 0
+                % Use recency weighting - more recent subgradients get higher weight
+                weights = exp(linspace(-3, 0, bundle_size));
+                weights = weights / sum(weights);
+                
+                % Compute weighted average subgradient
+                g_avg = zeros(size(bundle.g, 1), 1);
+                for i = 1:bundle_size
+                    g_avg = g_avg + weights(i) * bundle.g(:, i);
+                end
+                
+                % Adaptive step size based on bundle information
+                step_size = t / (norm(g_avg) + 1e-8);
+                
+                % Take step with momentum
+                persistent prev_step;
+                if isempty(prev_step)
+                    prev_step = zeros(size(z_current));
+                end
+                
+                momentum = 0.3; % Add 30% of previous step
+                z_new = z_current - step_size * g_avg + momentum * prev_step;
+                prev_step = z_new - z_current;
+                
+                % Project onto the feasible region
+                z_sg = obj.project(z_new, C);
+            else
+                z_sg = z_current;
+            end
+        end
+
+        % % Helper function for subgradient steps
+        % function z_sg = subgradient_step(obj, z_current, bundle, t, C)
+        %     % Use the latest subgradient (most recent point in the bundle)
+        %     latest_idx = size(bundle.g, 2);
+        %     if latest_idx > 0
+        %         g = bundle.g(:, latest_idx);
+        %     else
+        %         % If bundle is empty, use a zero gradient (shouldn't happen in practice)
+        %         g = zeros(size(z_current));
+        %     end
+        % 
+        %     % Calculate step size - adaptive based on iteration progress
+        %     step_size = t / (norm(g) + 1e-8);
+        % 
+        %     % Take a step in the negative gradient direction
+        %     z_new = z_current - step_size * g;
+        % 
+        %     % Project onto the feasible region
+        %     z_sg = obj.project(z_new, C);
+        % end
+
 
     end
 end
