@@ -36,31 +36,30 @@ classdef LBM < handle
             obj.max_constraints = max_constraints;
             obj.qp_ratio = qp_ratio;
         end
-        
         function alpha = optimize(obj, K, y, C)
             n = length(y);
             z0 = zeros(2*n, 1);
             z = obj.project(z0, C);
             [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
             f_best = f;
-
+        
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
-
+            bundle.K = K;  % Memorizza la matrice kernel nel bundle
+            bundle.y = y;  % Memorizza i valori target nel bundle
+        
             t = obj.tol;
             
             loading_bar = waitbar(0,'Computing LBM...');
             for iter = 1:obj.max_iter
                 waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + (iter) + "/" + obj.max_iter + ")");
-
+        
                 level = obj.theta * f + (1 - obj.theta) * f_best;
-                % z_new = obj.mp_solve(z, bundle, t, C);
                 z_new = obj.mp_solve(z, bundle, t, C, iter, obj.qp_ratio);
-
-
+        
                 step = z_new - z;
-
+        
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
                 
                 if f_new < f_best
@@ -72,7 +71,7 @@ classdef LBM < handle
                     bundle.f = bundle.f(2:end);
                     bundle.g = bundle.g(:, 2:end);
                 end
-
+        
                 bundle.z = [bundle.z, z_new];
                 bundle.f = [bundle.f, f_new];
                 bundle.g = [bundle.g, g_new];
@@ -83,17 +82,73 @@ classdef LBM < handle
                 else
                     t = t * 0.5;
                 end
-
+        
                 if norm(step) < obj.tol
                     break;
                 end
-
             end
-
+        
             delete(loading_bar);
-
+        
             alpha = z;
         end
+        % function alpha = optimize(obj, K, y, C)
+        %     n = length(y);
+        %     z0 = zeros(2*n, 1);
+        %     z = obj.project(z0, C);
+        %     [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
+        %     f_best = f;
+        % 
+        %     bundle.z = z;
+        %     bundle.f = f;
+        %     bundle.g = g;
+        % 
+        %     t = obj.tol;
+        % 
+        %     loading_bar = waitbar(0,'Computing LBM...');
+        %     for iter = 1:obj.max_iter
+        %         waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + (iter) + "/" + obj.max_iter + ")");
+        % 
+        %         level = obj.theta * f + (1 - obj.theta) * f_best;
+        %         % z_new = obj.mp_solve(z, bundle, t, C);
+        %         z_new = obj.mp_solve(z, bundle, t, C, iter, obj.qp_ratio);
+        % 
+        % 
+        %         step = z_new - z;
+        % 
+        %         [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
+        % 
+        %         if f_new < f_best
+        %             f_best = f_new;
+        %         end
+        % 
+        %         if size(bundle.z, 2) > obj.max_constraints
+        %             bundle.z = bundle.z(:, 2:end);
+        %             bundle.f = bundle.f(2:end);
+        %             bundle.g = bundle.g(:, 2:end);
+        %         end
+        % 
+        %         bundle.z = [bundle.z, z_new];
+        %         bundle.f = [bundle.f, f_new];
+        %         bundle.g = [bundle.g, g_new];
+        % 
+        %         if f_new <= level
+        %             z = z_new;
+        %             f = f_new;
+        %         else
+        %             t = t * 0.5;
+        %         end
+        % 
+        %         if norm(step) < obj.tol
+        %             break;
+        %         end
+        % 
+        %     end
+        % 
+        %     delete(loading_bar);
+        % 
+        %     alpha = z;
+        % end
     end
 
     methods (Access=private)
@@ -101,24 +156,31 @@ classdef LBM < handle
             n = length(y);
             alpha = z(1:n);
             alphaStar = z(n+1:end);
-            diffAlpha = alpha - alphaStar;
-
-            f = 0.5 * diffAlpha' * (K * diffAlpha) + epsilon * sum(alpha + alphaStar) - y' * diffAlpha;
-
-            Kdiff = K * diffAlpha;
-            g = [Kdiff + epsilon - y; -Kdiff + epsilon + y];
+            
+            % Create the block matrix representation to match quadprog
+            H = [K, -K; -K, K];
+            f_vec = [epsilon + y; epsilon - y];
+            
+            % Compute objective value (note the negative sign to match quadprog)
+            diffAlpha = [alpha; alphaStar];
+            f = -(-0.5 * diffAlpha' * H * diffAlpha + f_vec' * diffAlpha);
+            
+            % Gradient (again with sign adjustment)
+            g = -(-H * diffAlpha + f_vec);
         end
 
         function z_proj = project(~, z, C)
             n = numel(z)/2;
-
+            
+            % First apply box constraints
             alpha = min(max(z(1:n), 0), C);
             alphaStar = min(max(z(n+1:end), 0), C);
-
+            
+            % Then enforce the equality constraint sum(alpha) = sum(alphaStar)
             diff = (sum(alpha) - sum(alphaStar)) / (2*n);
             alpha = min(max(alpha - diff, 0), C);
             alphaStar = min(max(alphaStar + diff, 0), C);
-
+            
             z_proj = [alpha; alphaStar];
         end
 
@@ -208,39 +270,99 @@ classdef LBM < handle
             end
         end
 
+        % Implementazione del passo di subgradiente con condizione di Armijo
         function z_sg = subgradient_step(obj, z_current, bundle, t, C)
-            % Use weighted average of subgradients in the bundle
+            
+            % Usa la media pesata dei subgradienti nel bundle
             bundle_size = size(bundle.g, 2);
             if bundle_size > 0
-                % Use recency weighting - more recent subgradients get higher weight
+                % Pesi basati sulla recenza - i subgradienti più recenti hanno peso maggiore
                 weights = exp(linspace(-3, 0, bundle_size));
                 weights = weights / sum(weights);
                 
-                % Compute weighted average subgradient
+                % Calcola subgradiente medio pesato
                 g_avg = zeros(size(bundle.g, 1), 1);
                 for i = 1:bundle_size
                     g_avg = g_avg + weights(i) * bundle.g(:, i);
                 end
                 
-                % Adaptive step size based on bundle information
-                step_size = t / (norm(g_avg) + 1e-8);
+                % Calcola la direzione di discesa
+                d = -g_avg;
                 
-                % Take step with momentum
-                persistent prev_step;
-                if isempty(prev_step)
-                    prev_step = zeros(size(z_current));
+                % Valutazione della funzione nel punto corrente
+                [f_current, ~] = obj.svr_dual_function(z_current, bundle.K, bundle.y, obj.epsilon);
+                
+                % Parametri per la condizione di Armijo
+                alpha = 1.0;  % Step size iniziale
+                beta = 0.5;   % Fattore di riduzione dello step size
+                sigma = 0.1;  % Parametro per condizione di sufficiente decremento
+                
+                % Massimo numero di iterazioni per la ricerca in linea
+                max_line_search = 10;
+                
+                for i = 1:max_line_search
+                    % Calcola punto candidato
+                    z_new = z_current + alpha * d;
+                    
+                    % Proietta sulla regione ammissibile
+                    z_candidate = obj.project(z_new, C);
+                    
+                    % Valuta la funzione nel punto candidato
+                    [f_new, ~] = obj.svr_dual_function(z_candidate, bundle.K, bundle.y, obj.epsilon);
+                    
+                    % Verifica la condizione di Armijo (sufficiente decremento)
+                    if f_new <= f_current + sigma * g_avg' * (z_candidate - z_current)
+                        z_sg = z_candidate;
+                        return;
+                    end
+                    
+                    % Riduci lo step size
+                    alpha = beta * alpha;
                 end
                 
-                momentum = 0.3; % Add 30% of previous step
-                z_new = z_current - step_size * g_avg + momentum * prev_step;
-                prev_step = z_new - z_current;
-                
-                % Project onto the feasible region
+                % Se non è stata soddisfatta la condizione di Armijo, usa uno step piccolo
+                step_size = t / (norm(g_avg) + 1e-8) * 0.1;
+                z_new = z_current - step_size * g_avg;
                 z_sg = obj.project(z_new, C);
             else
+                % Se il bundle è vuoto, mantieni il punto corrente
                 z_sg = z_current;
             end
         end
+
+        % function z_sg = subgradient_step(obj, z_current, bundle, t, C)
+        %     % Use weighted average of subgradients in the bundle
+        %     bundle_size = size(bundle.g, 2);
+        %     if bundle_size > 0
+        %         % Use recency weighting - more recent subgradients get higher weight
+        %         weights = exp(linspace(-3, 0, bundle_size));
+        %         weights = weights / sum(weights);
+        % 
+        %         % Compute weighted average subgradient
+        %         g_avg = zeros(size(bundle.g, 1), 1);
+        %         for i = 1:bundle_size
+        %             g_avg = g_avg + weights(i) * bundle.g(:, i);
+        %         end
+        % 
+        %         % Adaptive step size based on bundle information
+        %         step_size = t / (norm(g_avg) + 1e-8);
+        % 
+        %         % Take step with momentum
+        %         persistent prev_step;
+        %         if isempty(prev_step)
+        %             prev_step = zeros(size(z_current));
+        %         end
+        % 
+        %         momentum = 0.3; % Add 30% of previous step
+        %         z_new = z_current - step_size * g_avg + momentum * prev_step;
+        %         prev_step = z_new - z_current;
+        % 
+        %         % Project onto the feasible region
+        %         z_sg = obj.project(z_new, C);
+        %     else
+        %         z_sg = z_current;
+        %     end
+        % end
 
         % % Helper function for subgradient steps
         % function z_sg = subgradient_step(obj, z_current, bundle, t, C)

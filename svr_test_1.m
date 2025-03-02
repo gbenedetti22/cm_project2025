@@ -3,10 +3,8 @@ clc; clear; close all;
 [X, y] = training_data("sin");
 
 kernel_function = RBFKernel();
-lbm = LBM(500, 1e-6, 0.1, 0.5, 20, 80);
+lbm = LBM(500, 1e-6, 0.1, 0.5, 20, 20);
 svr = SVR(kernel_function, 1, 0.1, lbm);
-% lbm = LBM(1000, 1e-6, 1e-7, 0.7, 150, 50);
-% svr = SVR(kernel_function, 250, 0.01, lbm);
 fprintf("Training start..\n");
 tic
 
