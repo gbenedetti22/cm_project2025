@@ -1,9 +1,9 @@
 clc; clear; close all;
 
-[X, y] = training_data("sin");
+[X, y] = training_data("abalone");
 
 kernel_function = RBFKernel();
-lbm = LBM(500, 1e-6, 0.1, 0.5, 20, 20);
+lbm = LBM(500, 1e-6, 0.1, 0.5, 20, 0);
 svr = SVR(kernel_function, 1, 0.1, lbm);
 fprintf("Training start..\n");
 tic
