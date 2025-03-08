@@ -5,8 +5,7 @@ classdef LBM < handle
         tol
         theta
         max_constraints
-        qp_ratio    %now: Numero di iterazioni per ciascuna modalità
-        % before: 0 -> sempre subgradiente, 100 -> sempre quadprog, altrimenti modalità "auto"
+        qp_ratio    % 0 -> sempre subgradiente, 100 -> sempre quadprog, altrimenti modalità "auto"
     end
     
     methods
@@ -27,8 +26,7 @@ classdef LBM < handle
                 max_constraints = 1000;
             end
             if nargin < 6 || isempty(qp_ratio)
-                qp_ratio = 10; % Default: alterna 10 iterazioni di quadprog e 10 di subgradient
-                % usa quadprog nel 10% dei cicli
+                qp_ratio = 10; % Default: usa quadprog nel 10% dei cicli
             end
 
             obj.max_iter = max_iter;
@@ -51,28 +49,13 @@ classdef LBM < handle
             bundle.g = g;
 
             t = obj.tol;
-            % loading_bar = waitbar(0, 'Computing LBM...');
+            %loading_bar = waitbar(0, 'Computing LBM...');
             h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
-            
-            % mode_qp = true;
-            % iter_count = 0;
 
             for iter = 1:obj.max_iter
                 %waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + iter + "/" + obj.max_iter + ")");
                 level = obj.theta * f + (1 - obj.theta) * f_best;
-                %%%%IMPLEMENTAZIONE CON CAMBIO ex:primi 10 qp- resto subg %%%%
-                % if iter <=20
-                %     z_new = obj.mp_quadprog_solve(z, bundle, t, C);
-                % else
-                %     z_new = obj.subgradient_step(z, bundle, t, C, level);
-                %%%%IMPLEMENTAZIONE ALTERNATA ex:10-10 %%%%
-                 % if mode_qp
-                 %    % Sempre quadprog
-                 %    z_new = obj.mp_quadprog_solve(z, bundle, t, C);
-                 % else
-                 %    z_new = obj.subgradient_step(z, bundle, t, C, level);
                 
-                %%%%IMPLEMENTAZIONE PERCENTUALE e:10% %%%%
                 if obj.qp_ratio == 100
                     % Sempre quadprog
                     z_new = obj.mp_quadprog_solve(z, bundle, t, C);
@@ -88,11 +71,6 @@ classdef LBM < handle
                     end
                 end
 
-                % iter_count = iter_count + 1;
-                % if iter_count >= obj.max_iter
-                %     mode_qp = ~mode_qp;
-                %     iter_count = 0;
-                %end
                 step = z_new - z;
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
                 addpoints(h, iter, f_new);
