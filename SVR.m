@@ -11,30 +11,41 @@ classdef SVR < handle
     end
 
     methods
-        function obj = SVR(kernel_function, C, epsilon, opt, tol)
-           if isa(kernel_function, 'KernelFunction')
-                obj.kernel_function = kernel_function;
-                obj.C = C;
-                obj.epsilon = epsilon;
-
-                if nargin < 4
-                    opt = false;
-                else
-                    if not(isobject(opt)) || not(isa(opt, 'LBM'))
-                        error('invalid optimizer');
-                    end
+        function obj = SVR(params)
+            
+           % Verifica campi obbligatori
+            required_fields = {'kernel_function', 'C', 'epsilon'};
+            for f = required_fields
+                if ~isfield(params, f{1})
+                    error('Struct params must contain field: %s', f{1});
                 end
-                   
-                if nargin < 5
-                    tol = 1e-5;
-                end
-
-                obj.opt = opt;
-                obj.tol = tol;
-            else
+            end
+            
+            % Validazione kernel
+            if ~isa(params.kernel_function, 'KernelFunction')
                 error('kernel_function must be a subclass of KernelFunction');
             end
-
+            obj.kernel_function = params.kernel_function;
+            
+            % Assegna parametri obbligatori
+            obj.C = params.C;
+            obj.epsilon = params.epsilon;
+            
+            % Assegna parametri opzionali con default
+            if isfield(params, 'opt')
+                if ~isempty(params.opt) && ( ~isobject(params.opt) || ~isa(params.opt, 'LBM') )
+                    error('opt must be a LBM object or empty');
+                end
+                obj.opt = params.opt;
+            else
+                obj.opt = false;
+            end
+            
+            if isfield(params, 'tol')
+                obj.tol = params.tol;
+            else
+                obj.tol = 1e-5;
+            end
         end
 
         function [X_sv, Y_sv] = fit(obj, X, Y)

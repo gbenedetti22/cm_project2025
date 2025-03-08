@@ -3,23 +3,34 @@ clc; clear; close all;
 [X, y] = training_data("abalone");
 X = zscore(X);
 
+% Definisci parametri in una struct
 lbm_params = struct(...
     'max_iter',       500, ...    % Maximum iterations
     'epsilon',        1e-6, ...   % Convergence tolerance
-    'tol',            0.1, ...    % Subgradient step tolerance
-    'theta',          0.5, ...    % Convex combination parameter
+    'tol',            0.1, ...     % Subgradient step tolerance
+    'theta',          0.5, ...     % Convex combination parameter
     'max_constraints', 20, ...    % Max constraints in bundle
     'qp_ratio',       0 ...       % 0 = always subgradient method
-); 
-
-lbm = LBM(lbm_params);
+);
 
 svr_params = struct(...
-    'kernel_function', RBFKernel(), ...  % Kernel function
-    'C',              1, ...             % Regolarization parameter
-    'epsilon',        0.1, ...           % Epsilon margin
-    'opt',            lbm ...            % LBM optimizer
-); 
+    'kernel_function', RBFKernel(), ...   % Funzione kernel
+    'C',              1, ...             % Parametro di regolarizzazione
+    'epsilon',        0.1, ...           % Margine epsilon
+    'opt',            lbm ...            % Ottimizzatore LBM
+    % 'tol',         1e-5 ...            % Tolleranza (opzionale, default 1e-5)
+);
+% Crea oggetto LBM
+lbm = LBM(lbm_params);
+
+
+
+svr_params = struct();
+svr_params.kernel_function = RBFKernel();
+svr_params.C = 1;
+svr_params.epsilon = 0.1;
+svr_params.opt = lbm;                          
+
 svr = SVR(svr_params);
 
 

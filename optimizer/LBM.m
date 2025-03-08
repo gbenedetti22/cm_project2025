@@ -10,33 +10,36 @@ classdef LBM < handle
     end
     
     methods
-        function obj = LBM(max_iter, epsilon, tol, theta, max_constraints, qp_ratio)
-            if nargin < 1 || isempty(max_iter)
-                max_iter = 500;
+        function obj = LBM(params)
+            if ~isstruct(params)
+                error('Input must be a struct');
             end
-            if nargin < 2 || isempty(epsilon)
-                epsilon = 1e-6;
+            obj = init_parameters(obj, params);
+        end
+        
+        function obj = init_parameters(obj, params)
+            % Valori di default
+            default_params = struct(...
+                'max_iter', 500,...
+                'epsilon', 1e-6,...
+                'tol', 1e-6,...
+                'theta', 0.5,...
+                'max_constraints', 1000,...
+                'qp_ratio', 10....
+            );
+            
+            all_fields = fieldnames(default_params);
+            for i = 1:length(all_fields)
+                field = all_fields{i};
+                if isfield(params, field)
+                    obj.(field) = params.(field);
+                else
+                    obj.(field) = default_params.(field);
+                end
             end
-            if nargin < 3 || isempty(tol)
-                tol = 1e-6;
-            end
-            if nargin < 4 || isempty(theta)
-                theta = 0.5;
-            end
-            if nargin < 5 || isempty(max_constraints)
-                max_constraints = 1000;
-            end
-            if nargin < 6 || isempty(qp_ratio)
-                qp_ratio = 10; % Default: alterna 10 iterazioni di quadprog e 10 di subgradient
-                % usa quadprog nel 10% dei cicli
-            end
-
-            obj.max_iter = max_iter;
-            obj.epsilon = epsilon;
-            obj.tol = tol;
-            obj.theta = theta;
-            obj.max_constraints = max_constraints;
-            obj.qp_ratio = qp_ratio;
+            
+            validateattributes(obj.max_iter, {'numeric'}, {'positive', 'integer'});
+            validateattributes(obj.epsilon, {'numeric'}, {'positive'});
         end
         
         function alpha = optimize(obj, K, y, C)
@@ -66,11 +69,11 @@ classdef LBM < handle
                 % else
                 %     z_new = obj.subgradient_step(z, bundle, t, C, level);
                 %%%%IMPLEMENTAZIONE ALTERNATA ex:10-10 %%%%
-                 % if mode_qp
-                 %    % Sempre quadprog
-                 %    z_new = obj.mp_quadprog_solve(z, bundle, t, C);
-                 % else
-                 %    z_new = obj.subgradient_step(z, bundle, t, C, level);
+                % if mode_qp
+                %     % Sempre quadprog
+                %     z_new = obj.mp_quadprog_solve(z, bundle, t, C);
+                % else
+                %     z_new = obj.subgradient_step(z, bundle, t, C, level);
                 
                 %%%%IMPLEMENTAZIONE PERCENTUALE e:10% %%%%
                 if obj.qp_ratio == 100
@@ -92,7 +95,7 @@ classdef LBM < handle
                 % if iter_count >= obj.max_iter
                 %     mode_qp = ~mode_qp;
                 %     iter_count = 0;
-                %end
+                % end
                 step = z_new - z;
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
                 addpoints(h, iter, f_new);
@@ -200,7 +203,7 @@ classdef LBM < handle
             active_cuts = lin_approx >= level;
             
             if any(active_cuts)
-                agg_g = bundle.g(:, active_cuts) * ones(sum(active_cuts), 1);
+                agg_g = sum(bundle.g(:, active_cuts), 2);
 
             else
                 agg_g = zeros(size(z_current));
