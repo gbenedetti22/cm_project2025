@@ -5,8 +5,7 @@ classdef LBM < handle
         tol
         theta
         max_constraints
-        qp_ratio    %now: Numero di iterazioni per ciascuna modalità
-        % before: 0 -> sempre subgradiente, 100 -> sempre quadprog, altrimenti modalità "auto"
+        qp_ratio    % 0: sempre subgradiente, 100: sempre quadprog, altrimenti modalità ibrida
     end
     
     methods
@@ -20,12 +19,12 @@ classdef LBM < handle
         function obj = init_parameters(obj, params)
             % Valori di default
             default_params = struct(...
-                'max_iter', 500,...
-                'epsilon', 1e-6,...
-                'tol', 1e-6,...
-                'theta', 0.5,...
-                'max_constraints', 1000,...
-                'qp_ratio', 10....
+                'max_iter', 500, ...
+                'epsilon', 1e-6, ...
+                'tol', 1e-6, ...
+                'theta', 0.5, ...
+                'max_constraints', 1000, ...
+                'qp_ratio', 10 ...
             );
             
             all_fields = fieldnames(default_params);
@@ -42,40 +41,28 @@ classdef LBM < handle
             validateattributes(obj.epsilon, {'numeric'}, {'positive'});
         end
         
-        function alpha = optimize(obj, K, y, C)
+        % La funzione optimize restituisce le variabili compattate:
+        % w = alpha - alpha* e u, da cui ricostruire il modello SVR
+        function [w, u] = optimize(obj, K, y, C)
             n = length(y);
-            z0 = zeros(2*n, 1);
+            % Inizialmente, poniamo w = 0 e u = C (scelta ammissibile: C >= |0|)
+            z0 = [zeros(n,1); C * ones(n,1)];
             z = obj.project(z0, C);
             [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
             f_best = f;
 
+            % Inizializza il bundle con il punto corrente
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
 
             t = obj.tol;
-            % loading_bar = waitbar(0, 'Computing LBM...');
             h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
             
-            % mode_qp = true;
-            % iter_count = 0;
-
             for iter = 1:obj.max_iter
-                %waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + iter + "/" + obj.max_iter + ")");
                 level = obj.theta * f + (1 - obj.theta) * f_best;
-                %%%%IMPLEMENTAZIONE CON CAMBIO ex:primi 10 qp- resto subg %%%%
-                % if iter <=20
-                %     z_new = obj.mp_quadprog_solve(z, bundle, t, C);
-                % else
-                %     z_new = obj.subgradient_step(z, bundle, t, C, level);
-                %%%%IMPLEMENTAZIONE ALTERNATA ex:10-10 %%%%
-                % if mode_qp
-                %     % Sempre quadprog
-                %     z_new = obj.mp_quadprog_solve(z, bundle, t, C);
-                % else
-                %     z_new = obj.subgradient_step(z, bundle, t, C, level);
                 
-                %%%%IMPLEMENTAZIONE PERCENTUALE e:10% %%%%
+                % Alterna la modalità in base a qp_ratio
                 if obj.qp_ratio == 100
                     % Sempre quadprog
                     z_new = obj.mp_quadprog_solve(z, bundle, t, C);
@@ -91,19 +78,16 @@ classdef LBM < handle
                     end
                 end
 
-                % iter_count = iter_count + 1;
-                % if iter_count >= obj.max_iter
-                %     mode_qp = ~mode_qp;
-                %     iter_count = 0;
-                % end
                 step = z_new - z;
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
                 addpoints(h, iter, f_new);
                 drawnow;
+                
                 if f_new < f_best
                     f_best = f_new;
                 end
                 
+                % Troncamento del bundle se supera il numero massimo di vincoli
                 if size(bundle.z, 2) >= obj.max_constraints
                     bundle.z = bundle.z(:, 2:end);
                     bundle.f = bundle.f(2:end);
@@ -127,67 +111,83 @@ classdef LBM < handle
                 end
             end
 
-            %delete(loading_bar);
-            alpha = z;
+            % Estrae le componenti: le prime n componenti sono w, le restanti u
+            w = z(1:n);
+            u = z(n+1:end);
         end
 
+        % Funzione duale compatta per SVR
+        % Input: z = [w; u], con w in R^n e u in R^n
+        % f(w,u) = 0.5 * w' * K * w + epsilon * sum(u) - y' * w
         function [f, g] = svr_dual_function(~, z, K, y, epsilon)
             n = length(y);
-            alpha = z(1:n);
-            alphaStar = z(n+1:end);
-            diffAlpha = alpha - alphaStar;
+            w = z(1:n);
+            u = z(n+1:end);
             
-            f = 0.5 * diffAlpha' * (K * diffAlpha) + epsilon * sum(alpha + alphaStar) - y' * diffAlpha;
+            f = 0.5 * w' * K * w + epsilon * sum(u) - y' * w;
             
-            Kdiff = K * diffAlpha;
-            g = [Kdiff + epsilon - y; -Kdiff + epsilon + y];
+            % Calcolo dei subgradienti:
+            % Per w: grad_w = K*w - y
+            % Per u: grad_u = epsilon (visto che la derivata di epsilon*u è epsilon)
+            g = [K * w - y; epsilon * ones(n, 1)];
+            
+            % Nota: I termini derivanti dal vincolo u >= |w| vengono gestiti tramite le cutting planes (bundle)
         end
 
+        % Funzione di proiezione per assicurare la fattibilità:
+        % - Si impone che la media di w sia zero (equivalente al vincolo sum(w)=0)
+        % - Si impone che per ogni i, u_i >= |w_i| e 0 <= u_i <= 2C
         function z_proj = project(~, z, C)
-            n = numel(z)/2;
+            n = length(z)/2;
+            w = z(1:n);
+            u = z(n+1:end);
             
-            alpha = min(max(z(1:n), 0), C);
-            alphaStar = min(max(z(n+1:end), 0), C);
+            % Forza il vincolo di equilibrio: sum(w) = 0
+            w = w - mean(w);
             
-            diff = (sum(alpha) - sum(alphaStar)) / (2*n);
-            alpha = min(max(alpha - diff, 0), C);
-            alphaStar = min(max(alphaStar + diff, 0), C);
+            % Per ogni componente, impone u_i >= |w_i| e rispetta i limiti [0, 2C]
+            u = max(u, abs(w));
+            u = min(max(u, 0), 2 * C);
             
-            z_proj = [alpha; alphaStar];
+            z_proj = [w; u];
         end
 
+        % Risolutore del problema master via quadprog
+        % Si risolve:
+        %   min (1/(2t))||z - z_current||^2 + s
+        % soggetto a:
+        %   cutting plane constraints: bundle.f + bundle.g'*(z - bundle.z) <= s
+        %   vincoli: sum(w)=0, 0 <= u <= 2C (soglia su z gestita via lb/ub)
         function z_opt = mp_quadprog_solve(~, z_current, bundle, t, C)
-            % Function to minimize: Q(z,s) = s + 1/2t z-z_current^2
-            % That is the objective function of the level bundle method
-
             n2 = length(z_current);
             n = n2/2;
             m = length(bundle.f);
 
-            % H represent the quadratic term of the objective function, so
-            % contains 1/t * I
+            % Matrice quadratica: H = (1/t)*I per z (esteso a dimensione n2) e zero per s
             H = sparse(1:n2, 1:n2, 1/t, n2, n2);
             H = blkdiag(H, 0);
 
-            % linear term
-            f = sparse([-(1/t) * z_current; 1]);
-            
-            A_bundle = sparse([bundle.g' -ones(m,1)]);
+            % Termine lineare: f_lin = - (1/t)*z_current concatenato con 1 per s
+            f_lin = sparse([-(1/t) * z_current; 1]);
+
+            % Vincoli derivanti dal bundle: A_bundle * [z; s] <= b_bundle
+            A_bundle = sparse([bundle.g' -ones(m, 1)]);
             b_bundle = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
 
-            Aeq = sparse([ones(1,n), -ones(1,n), 0]);
+            % Vincolo di uguaglianza per la condizione sum(w)=0.
+            % Le prime n componenti di z sono w.
+            Aeq = sparse([ones(1, n), zeros(1, n+1)]);
             beq = 0;
 
-            lb = sparse([zeros(n2,1); -inf]);
-            ub = sparse([C * ones(n2,1);  inf]);
+            % Limiti inferiori e superiori:
+            % Per w: nessun limite (inf), per u: [0, 2C]
+            lb = [-inf(n2, 1); -inf];
+            lb(n+1:n2) = 0;
+            ub = [inf(n2, 1); inf];
+            ub(n+1:n2) = 2 * C;
 
-            if exist('mosekopt', 'file') == 3
-                options = mskoptimset('Display', 'off');
-            else
-                options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-point-convex');
-            end
-            
-            [z_sol, ~, exitflag] = quadprog(H, f, A_bundle, b_bundle, Aeq, beq, lb, ub, [], options);
+            options = optimoptions('quadprog', 'Display', 'off', 'Algorithm', 'interior-point-convex');
+            [z_sol, ~, exitflag] = quadprog(H, f_lin, A_bundle, b_bundle, Aeq, beq, lb, ub, [], options);
 
             if exitflag <= 0
                 warning('quadprog non ha trovato una soluzione valida. Manteniamo la soluzione corrente.');
@@ -197,6 +197,7 @@ classdef LBM < handle
             end
         end
 
+        % Aggiornamento via subgradiente aggregato
         function z_sg = subgradient_step(obj, z_current, bundle, t, C, level)
             z_diff = z_current - bundle.z;
             lin_approx = bundle.f + sum(bundle.g .* z_diff, 1);
@@ -204,7 +205,6 @@ classdef LBM < handle
             
             if any(active_cuts)
                 agg_g = sum(bundle.g(:, active_cuts), 2);
-
             else
                 agg_g = zeros(size(z_current));
             end
