@@ -34,28 +34,28 @@ classdef LBM < handle
         
         function alpha = optimize(obj, K, y, C)
             n = length(y);
-            z0 = zeros(2*n, 1);
-            z = obj.project(z0, C);
+            z = zeros(n, 1);
             [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
             f_best = f;
 
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
-
-            t = obj.tol;
             
-            loading_bar = waitbar(0,'Computing LBM...');
+            h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
             for iter = 1:obj.max_iter
-                waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + (iter) + "/" + obj.max_iter + ")");
-
                 level = obj.theta * f + (1 - obj.theta) * f_best;
 
-                z_new = obj.mp_solve(z, bundle, t, C);
+                z_new = obj.mp_solve(z, bundle, level, C);
 
                 step = z_new - z;
 
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
+                addpoints(h, iter, f_new);
+                % for gj = 1:length(g_new)
+                %     addpoints(h, iter, g_new(gj));
+                % end
+                drawnow;
                 
                 if f_new < f_best
                     f_best = f_new;
@@ -74,8 +74,6 @@ classdef LBM < handle
                 if f_new <= level
                     z = z_new;
                     f = f_new;
-                else
-                    t = t * 0.5;
                 end
 
                 if norm(step) < obj.tol
@@ -84,73 +82,49 @@ classdef LBM < handle
 
             end
 
-            delete(loading_bar);
-
             alpha = z;
         end
     end
 
     methods (Access=private)
-        function [f, g] = svr_dual_function(~, z, K, y, epsilon)
-            n = length(y);
-            alpha = z(1:n);
-            alphaStar = z(n+1:end);
-            diffAlpha = alpha - alphaStar;
+        
+        function [f, g] = svr_dual_function(~, x, K, y, epsilon)
+            f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
 
-            f = 0.5 * diffAlpha' * (K * diffAlpha) + epsilon * sum(alpha + alphaStar) - y' * diffAlpha;
-
-            Kdiff = K * diffAlpha;
-            g = [Kdiff + epsilon - y; -Kdiff + epsilon + y];
+            g = K * x + epsilon * sign(x) - y;
         end
 
-        function z_proj = project(~, z, C)
-            n = numel(z)/2;
-
-            alpha = min(max(z(1:n), 0), C);
-            alphaStar = min(max(z(n+1:end), 0), C);
-
-            diff = (sum(alpha) - sum(alphaStar)) / (2*n);
-            alpha = min(max(alpha - diff, 0), C);
-            alphaStar = min(max(alphaStar + diff, 0), C);
-
-            z_proj = [alpha; alphaStar];
-        end
-
-
-        function z_opt = mp_solve(~, z_current, bundle, t, C)
-            n2 = length(z_current);
-            n = n2/2;
+        
+        function alpha_opt = mp_solve(~, alpha_hat, bundle, f_level, C)
+            n = length(alpha_hat);
             m = length(bundle.f);
 
-            H = sparse(1:n2, 1:n2, 1/t, n2, n2);
-            H = blkdiag(H, 0);
+            H = blkdiag(speye(n), 0);
+            f = sparse([-alpha_hat; 0]);
 
-            f = sparse([-(1/t) * z_current; 1]);
-            
-            A_bundle = sparse([bundle.g' -ones(m,1)]);
-            b_bundle = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
+            A = sparse([bundle.g' -ones(m, 1)]);
+            b = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
 
-            Aeq = sparse([ones(1,n), -ones(1,n), 0]);
+            Aeq = sparse([ones(1, n) 0]);
             beq = 0;
 
-            lb = sparse([zeros(n2,1); -inf]);
-            ub = sparse([C * ones(n2,1);  inf]);
+            lb = sparse([-C * ones(n, 1); -inf]);
+            ub = sparse([C * ones(n, 1); f_level]);
 
-            if exist('mosekopt', 'file') == 3
-                options = mskoptimset('Display', 'off');
+            if exist('mosekopt','file') == 3
+                options = mskoptimset('Display','off');
             else
-                options = optimoptions('Display', 'off', 'Algorithm', 'interior-point-convex');
+                options = optimoptions('quadprog','Display','off','Algorithm','interior-point-convex');
             end
-            
-            [z_sol, ~, exitflag] = quadprog(H, f, A_bundle, b_bundle, Aeq, beq, lb, ub, [], options);
+
+            [sol, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
 
             if exitflag <= 0
-                warning('quadprog non ha trovato una soluzione valida. Manteniamo la soluzione corrente.');
-                z_opt = z_current;
+                warning("best solution not found, keeping prev...");
+                alpha_opt = alpha_hat;
             else
-                z_opt = z_sol(1:n2);
+                alpha_opt = sol(1:n);
             end
         end
-
     end
 end

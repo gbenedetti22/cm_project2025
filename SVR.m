@@ -50,13 +50,19 @@ classdef SVR < handle
                 beq = 0;
                 lb = zeros(2*length(Y), 1);
                 ub = obj.C * ones(2*length(Y), 1);
-                options = optimoptions('quadprog', 'Display', 'off');
+                
+                if exist('mosekopt', 'file') == 3
+                    options = mskoptimset('Display', 'off');
+                else
+                    options = optimoptions('quadprog', 'Display', 'off');
+                end
+                
                 z = quadprog(H, -f, [], [], Aeq, beq, lb, ub, [], options);
             end
             
-            alpha_pos = z(1:length(Y));
-            alpha_neg = z(length(Y)+1:end);
-            obj.alpha_svr = alpha_pos - alpha_neg;
+            % alpha_pos = z(1:length(Y));
+            % alpha_neg = z(length(Y)+1:end);
+            obj.alpha_svr = z;
             
             sv_indices = find(abs(obj.alpha_svr) > obj.tol);
             
@@ -69,6 +75,9 @@ classdef SVR < handle
             else
                 X_sv = obj.X_train(sv_indices, :);
                 Y_sv = Y(sv_indices);
+
+                disp("alpha max: " + max(obj.alpha_svr));
+                disp("alpha min: " + min(obj.alpha_svr));
 
                 obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
             end
