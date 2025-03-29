@@ -11,6 +11,8 @@ classdef SVR < handle
     end
 
     methods
+
+        
         function obj = SVR(params)
             
            % Verifica campi obbligatori
@@ -51,14 +53,22 @@ classdef SVR < handle
         function [X_sv, Y_sv] = fit(obj, X, Y)
             obj.X_train = X;
             K = obj.kernel_function.compute(X, X);
+<<<<<<< Updated upstream
 
             if isa(obj.opt, 'LBM')
                 z = obj.opt.optimize(K, Y, obj.C);
+=======
+            
+            if isa(obj.opt, 'LBM')
+                z = obj.opt.optimize(K, Y, obj.C,obj.epsilon);
+    
+>>>>>>> Stashed changes
             else
                 H = [K, -K; -K, K];
                 f = [obj.epsilon + Y; obj.epsilon - Y]';
                 Aeq = [ones(1, length(Y)), -ones(1, length(Y))];
                 beq = 0;
+<<<<<<< Updated upstream
                 lb = zeros(2*length(Y), 1);
                 ub = obj.C * ones(2*length(Y), 1);
                 options = optimoptions('quadprog', 'Display', 'off');
@@ -69,6 +79,21 @@ classdef SVR < handle
             alpha_neg = z(length(Y)+1:end);
             obj.alpha_svr = alpha_pos - alpha_neg;
             
+=======
+                lb = zeros(2*n, 1);
+                ub = obj.C * ones(2*n, 1);
+
+                if exist('mosekopt', 'file') == 3
+                    options = mskoptimset('Display', 'off');
+                else
+                    options = optimoptions('quadprog', 'Display', 'off');
+                end
+                z = quadprog(H, -f, [], [], Aeq, beq, lb, ub, [], options);
+            end
+            
+            obj.alpha_svr = z;
+            % Identifica i vettori di supporto
+>>>>>>> Stashed changes
             sv_indices = find(abs(obj.alpha_svr) > obj.tol);
             
             if isempty(sv_indices)
@@ -81,6 +106,12 @@ classdef SVR < handle
                 X_sv = obj.X_train(sv_indices, :);
                 Y_sv = Y(sv_indices);
 
+<<<<<<< Updated upstream
+=======
+                disp("alpha max: " + max(obj.alpha_svr));
+                disp("alpha min: " + min(obj.alpha_svr));
+
+>>>>>>> Stashed changes
                 obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
             end
         end

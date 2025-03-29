@@ -4,20 +4,20 @@ clc; clear; close all;
 X = zscore(X);
 
 lbm_params = struct(...
-    'max_iter',       500, ...    % Maximum iterations
-    'epsilon',        1e-6, ...   % Convergence tolerance
-    'tol',            0.1, ...    % Subgradient step tolerance
-    'theta',          0.5, ...    % Convex combination parameter
-    'max_constraints', 20, ...    % Max constraints in bundle
+    'max_iter',       200, ...    % Maximum iterations
+    'epsilon',        0.05, ...   % Convergence tolerance
+    'tol',            1e-11, ...    % Subgradient step tolerance
+    'theta',          0.9, ...    % Convex combination parameter
+    'max_constraints', 50, ...    % Max constraints in bundle
     'qp_ratio',       0 ...       % 0 = always subgradient method
 ); 
 
 lbm = LBM(lbm_params);
 
 svr_params = struct(...
-    'kernel_function', RBFKernel(), ...  % Kernel function
+    'kernel_function', RBFKernel(0.7), ...  % Kernel function
     'C',              1, ...             % Regolarization parameter
-    'epsilon',        0.1, ...           % Epsilon margin
+    'epsilon',        0.05, ...           % Epsilon margin
     'opt',            lbm ...            % LBM optimizer
 ); 
 svr = SVR(svr_params);

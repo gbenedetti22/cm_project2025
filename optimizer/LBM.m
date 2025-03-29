@@ -24,8 +24,7 @@ classdef LBM < handle
                 'epsilon', 1e-6,...
                 'tol', 1e-6,...
                 'theta', 0.5,...
-                'max_constraints', 1000,...
-                'qp_ratio', 10....
+                'max_constraints', 1000....
             );
             
             all_fields = fieldnames(default_params);
@@ -42,6 +41,7 @@ classdef LBM < handle
             validateattributes(obj.epsilon, {'numeric'}, {'positive'});
         end
         
+<<<<<<< Updated upstream
         function alpha = optimize(obj, K, y, C)
             n = length(y);
             z0 = zeros(2*n, 1);
@@ -49,18 +49,32 @@ classdef LBM < handle
             [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
             f_best = f;
 
+=======
+        function alpha = optimize(obj, K, y, C, epsilon)
+            n = length(y);
+            z = zeros(n, 1);
+            alpha= z;
+            %alpha = obj.project(z, C);
+            [f, g] = obj.svr_dual_function(alpha, K, y, epsilon);
+            
+            f_best = f;
+>>>>>>> Stashed changes
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
-
             t = obj.tol;
+<<<<<<< Updated upstream
             % loading_bar = waitbar(0, 'Computing LBM...');
+=======
+            
+>>>>>>> Stashed changes
             h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
             
             % mode_qp = true;
             % iter_count = 0;
 
             for iter = 1:obj.max_iter
+<<<<<<< Updated upstream
                 %waitbar(iter/obj.max_iter, loading_bar, "Computing LBM (" + iter + "/" + obj.max_iter + ")");
                 level = obj.theta * f + (1 - obj.theta) * f_best;
                 %%%%IMPLEMENTAZIONE CON CAMBIO ex:primi 10 qp- resto subg %%%%
@@ -98,13 +112,21 @@ classdef LBM < handle
                 % end
                 step = z_new - z;
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
+=======
+                
+                level = obj.theta * f + (1 - obj.theta) * f_best;
+                z_new = obj.mp_solve(z, bundle, level, C);
+                step = z_new - z;
+
+                [f_new, g_new] = obj.svr_dual_function(z_new, K, y, epsilon);
+>>>>>>> Stashed changes
                 addpoints(h, iter, f_new);
                 drawnow;
                 if f_new < f_best
                     f_best = f_new;
                 end
                 
-                if size(bundle.z, 2) >= obj.max_constraints
+                if size(bundle.z, 2) > obj.max_constraints
                     bundle.z = bundle.z(:, 2:end);
                     bundle.f = bundle.f(2:end);
                     bundle.g = bundle.g(:, 2:end);
@@ -117,15 +139,13 @@ classdef LBM < handle
                 if f_new <= level
                     z = z_new;
                     f = f_new;
-                    g = g_new;
-                else
-                    t = t * 0.5;
                 end
 
-                if norm(step) < obj.tol
+                if norm(step) < t
                     break;
                 end
             end
+<<<<<<< Updated upstream
 
             %delete(loading_bar);
             alpha = z;
@@ -141,6 +161,34 @@ classdef LBM < handle
             
             Kdiff = K * diffAlpha;
             g = [Kdiff + epsilon - y; -Kdiff + epsilon + y];
+=======
+            alpha = z;
+        end
+
+        function [f, g] = svr_dual_function(~, gamma, K, y, epsilon)
+            f = 0.5 * gamma' * (K * gamma) + epsilon * sum(abs(gamma)) - y' * gamma;
+            g_smooth = K * gamma - y;
+            % Subgradient for L1 term
+            g_l1 = epsilon * sign(gamma);
+            % Handle gamma_i = 0 by choosing subgradient in [-epsilon, epsilon]
+            zero_indices = (gamma == 0);
+            g_l1(zero_indices) = epsilon * sign(g_smooth(zero_indices));
+            g_l1(zero_indices & (g_smooth == 0)) = 0; % If smooth grad is zero, subgradient can be 0
+            g = g_smooth + g_l1;
+        end
+        
+
+        function gamma_proj = project(~, gamma, C)
+            gamma = max(min(gamma, C), -C);  % Initial clipping
+            for k = 1:5
+                % Sum correction
+                avg = mean(gamma);
+                gamma = gamma - avg;
+                % Re-clipping
+                gamma = max(min(gamma, C), -C);
+            end
+            gamma_proj = gamma;
+>>>>>>> Stashed changes
         end
 
         function z_proj = project(~, z, C)
@@ -156,6 +204,7 @@ classdef LBM < handle
             z_proj = [alpha; alphaStar];
         end
 
+<<<<<<< Updated upstream
         function z_opt = mp_quadprog_solve(~, z_current, bundle, t, C)
             % Function to minimize: Q(z,s) = s + 1/2t z-z_current^2
             % That is the objective function of the level bundle method
@@ -218,5 +267,37 @@ classdef LBM < handle
             z_new = z_current - step;
             z_sg = obj.project(z_new, C);
         end
+=======
+        function alpha_opt = mp_solve(~, alpha_current, bundle, f_level, C)
+            n = length(alpha_current);
+            m = length(bundle.f);
+            H = blkdiag(speye(n), 0);
+            
+            f = sparse([-alpha_current; 0]);
+            
+            A = sparse([bundle.g' -ones(m, 1)]);
+            b = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
+            
+            Aeq = sparse([ones(1, n) 0]);
+            beq = 0;
+            
+            lb = sparse([-C * ones(n, 1); -inf]);
+            ub = sparse([C * ones(n, 1); f_level]);
+
+            if exist('mosekopt','file') == 3
+                options = mskoptimset('Display','off');
+            else
+                options = optimoptions('quadprog','Display','off','Algorithm','interior-point-convex');
+            end
+            sol = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+            
+            if isempty(sol)
+                alpha_opt = alpha_current;
+            else
+                alpha_opt = sol(1:n);
+            end
+        end
+
+>>>>>>> Stashed changes
     end
 end
