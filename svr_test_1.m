@@ -8,8 +8,7 @@ lbm_params = struct(...
     'epsilon',        0.05, ...   % Convergence tolerance
     'tol',            1e-11, ...    % Subgradient step tolerance
     'theta',          0.9, ...    % Convex combination parameter
-    'max_constraints', 50, ...    % Max constraints in bundle
-    'qp_ratio',       0 ...       % 0 = always subgradient method
+    'max_constraints', 50 ...    % Max constraints in bundle
 ); 
 
 lbm = LBM(lbm_params);
