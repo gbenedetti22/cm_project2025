@@ -32,7 +32,7 @@ classdef LBM < handle
             obj.max_constraints = max_constraints;
         end
         
-        function alpha = optimize(obj, K, y, C)
+        function [alpha, f_values] = optimize(obj, K, y, C)
             n = length(y);
             z = zeros(n, 1);
             [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
@@ -41,21 +41,31 @@ classdef LBM < handle
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
+
+            f_values = nan(obj.max_iter, 1);
+            momentum = 0.5;
+            lr = 1e-5;
+            velocity = zeros(size(z));
             
             h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
             for iter = 1:obj.max_iter
                 level = obj.theta * f + (1 - obj.theta) * f_best;
 
                 z_new = obj.mp_solve(z, bundle, level, C);
-
                 step = z_new - z;
+                z = z_new;
 
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
-                addpoints(h, iter, f_new);
-                % for gj = 1:length(g_new)
-                %     addpoints(h, iter, g_new(gj));
-                % end
+                f_values(iter) = f_new;
+                addpoints(h, iter, norm(z_new));
                 drawnow;
+
+                velocity = momentum * velocity - lr * g_new;
+
+                z_new = z_new + velocity;
+
+                fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Step norm: %.6e\n', ...
+                    iter, f_new, norm(g_new), norm(step));
                 
                 if f_new < f_best
                     f_best = f_new;
@@ -99,8 +109,10 @@ classdef LBM < handle
             n = length(alpha_hat);
             m = length(bundle.f);
 
-            H = blkdiag(speye(n), 0);
-            f = sparse([-alpha_hat; 0]);
+            scale_factor = 1e-6;
+
+            H = blkdiag(speye(n) * scale_factor, 0);
+            f = sparse([-alpha_hat * scale_factor; 0]);
 
             A = sparse([bundle.g' -ones(m, 1)]);
             b = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
@@ -111,11 +123,7 @@ classdef LBM < handle
             lb = sparse([-C * ones(n, 1); -inf]);
             ub = sparse([C * ones(n, 1); f_level]);
 
-            if exist('mosekopt','file') == 3
-                options = mskoptimset('Display','off');
-            else
-                options = optimoptions('quadprog','Display','off','Algorithm','interior-point-convex');
-            end
+            options = optimoptions('quadprog','Display','off');
 
             [sol, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
 

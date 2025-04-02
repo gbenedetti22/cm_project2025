@@ -8,6 +8,7 @@ classdef SVR < handle
         X_train
         opt
         tol
+        f_values
     end
 
     methods
@@ -37,55 +38,74 @@ classdef SVR < handle
 
         end
 
-        function [X_sv, Y_sv] = fit(obj, X, Y)
+        function [x, f_values] = fit(obj, X, Y)
             obj.X_train = X;
             K = obj.kernel_function.compute(X, X);
 
             if isa(obj.opt, 'LBM')
-                z = obj.opt.optimize(K, Y, obj.C);
+                [x, f_values] = obj.opt.optimize(K, Y, obj.C);
             else
-                H = [K, -K; -K, K];
-                f = [obj.epsilon + Y; obj.epsilon - Y]';
-                Aeq = [ones(1, length(Y)), -ones(1, length(Y))];
+                n = length(Y);
+
+                svr_dual =  @(x) obj.svr_dual_function(x, K, Y, obj.epsilon);
+               
+                alpha0 = zeros(n, 1);
+
+                Aeq = ones(1, n);
                 beq = 0;
-                lb = zeros(2*length(Y), 1);
-                ub = obj.C * ones(2*length(Y), 1);
-                
-                if exist('mosekopt', 'file') == 3
-                    options = mskoptimset('Display', 'off');
-                else
-                    options = optimoptions('quadprog', 'Display', 'off');
-                end
-                
-                z = quadprog(H, -f, [], [], Aeq, beq, lb, ub, [], options);
+
+                A = [];
+                b = [];
+
+                lb = -obj.C * ones(n, 1);
+                ub = obj.C * ones(n, 1);
+
+                outHandle = @(x, optimValues, state) obj.outfun(x, optimValues, state);
+
+                % 'PlotFcn', {@optimplotfval}, ...
+                options = optimoptions('fmincon', 'Display', 'iter', ...
+                    'SpecifyObjectiveGradient', true, 'MaxIterations', 50, ...
+                    'OutputFcn', outHandle);
+
+                x = fmincon(svr_dual, alpha0, A, b, Aeq, beq, lb, ub, [], options);
+                f_values = obj.f_values;
             end
             
-            % alpha_pos = z(1:length(Y));
-            % alpha_neg = z(length(Y)+1:end);
-            obj.alpha_svr = z;
+            obj.alpha_svr = x;
             
             sv_indices = find(abs(obj.alpha_svr) > obj.tol);
             
             if isempty(sv_indices)
-                X_sv = [];
-                Y_sv = [];
                 warning("Support vectors not found");
 
                 obj.bias = mean(Y - (K * obj.alpha_svr));
             else
-                X_sv = obj.X_train(sv_indices, :);
-                Y_sv = Y(sv_indices);
-
-                disp("alpha max: " + max(obj.alpha_svr));
-                disp("alpha min: " + min(obj.alpha_svr));
-
                 obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
             end
+        end
+
+        function [f, g] = svr_dual_function(~, x, K, y, epsilon)
+            f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
+
+            g = K * x + epsilon * sign(x) - y;
         end
 
         function y_pred = predict(obj, X)
             K_test = obj.kernel_function.compute(X, obj.X_train);
             y_pred = K_test * obj.alpha_svr + obj.bias;
         end
+
+        function stop = outfun(obj, ~, optimValues, state)
+            if strcmp(state, 'init')
+                obj.f_values = [];
+            end
+
+            if strcmp(state, 'iter')
+                obj.f_values = [obj.f_values; optimValues.fval];
+            end
+
+            stop = false;
+        end
+
     end
 end

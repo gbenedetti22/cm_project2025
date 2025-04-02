@@ -3,63 +3,60 @@
 
 ## Hyperparameters Used
 
-During the hyperparameter selection phase for the various SVR models, we maintained the same values as much as possible to ensure a fair and consistent comparison among the different approaches. However, for the oracle implementation, it was not feasible to use the `quadprog` method due to the high number of constraints present in the problem. Consequently, we opted for an alternative algorithm, Sequential Minimal Optimization (SMO), which is capable of efficiently handling large datasets. All other parameters were kept at their default values.
+During the hyperparameter selection phase for the various SVR models, we maintained the same values as much as possible to ensure a fair and consistent comparison among the different approaches.
 
 ### SVR Parameters:
 - **`kernel_function`**: `RBFKernel()` 
+
   *Kernel function used in the Support Vector Regression (SVR) model (Radial Basis Function Kernel in this case).*
-- **`C`**: 1 
-  *Regularization parameter for the SVR model, controlling the trade-off between model complexity and training error.*
-- **`epsilon`**: 0.1 
+
+- **`C`**: 1
+  
+   *Regularization parameter for the SVR model, controlling the trade-off between model complexity and training error.*
+  
+- **`epsilon`**: 0.05
+  
   *Epsilon margin for the SVR model, defining the tolerance for prediction errors.*
+  
+- **`max_iter`**: 500 
+  
+  *Maximum number of iterations for the Level Bundle Method (LBM).*
+  
 - **`opt`**: `lbm` 
+  
   *Optimizer used for the SVR model (Level Bundle Method in this case).*
 
 ### LBM Parameters:
-- **`max_iter`**: 500 
-  *Maximum number of iterations for the Level Bundle Method (LBM).*
-- **`epsilon`**: 1e-6 
-  *Convergence tolerance for the LBM algorithm.*
-- **`tol`**: 0.1 
-  *Tolerance for the subgradient step in the LBM.*
-- **`theta`**: 0.5 
+- **`tol`**: 1e-3 
+  
+  *Tolerance for the subgradient step in the LBM (stopping criteria).*
+  
+- **`theta`**: 0.1
+  
   *Convex combination parameter used in the LBM.*
-- **`max_constraints`**: 20 
+  
+- **`max_constraints`**: 50
+  
   *Maximum number of constraints allowed in the bundle.*
 
 ## Results
 
-\begin{table}[h]
-\centering
-\renewcommand{\arraystretch}{0.9} % Riduce l'altezza delle righe
-\setlength{\tabcolsep}{2pt} % Riduce lo spazio tra le colonne
+Thanks to the optimizations introduced so far, our LBM method achieved **sustainable performance**, with a **Mean Squared Error (MSE) of 4.3729**, and a **linear convergence rate**. This result is totally comparable with the Oracle that obtained an **MSE of 4.2187**  as shown in the previous chapter.
 
-\resizebox{1.0\textwidth}{!}{%
-\begin{tabular}{|p{2.5cm}|p{1.5cm}|p{2cm}|p{1.5cm}|p{2cm}|p{1.5cm}|p{2cm}|p{1.5cm}|p{2cm}|}
-\hline
-Funzione & \multicolumn{2}{c|}{SVR} & \multicolumn{2}{c|}{SVR with LBM} & \multicolumn{2}{c|}{SVR with aggr. subgr.} & \multicolumn{2}{c|}{Oracle} \\
-\hline
- & MSE & Training time & MSE & Training time & MSE & Training time & MSE & Training time \\
-\hline
-Sine & 0.0114 & 0.025016 & 0.012 & 0.386 & 0.0249 & 0.002934 & 0.0104 & 0.047736 \\
-Exp & 0.0854 & 0.012039 & 0.0558 & 0.252 & 0.1040 & 0.003823 & 0.0356 & 0.036522 \\
-Step & 0.0342 & 0.007809 & 0.0307 & 0.287 & 0.0527 & 0.003804 & 0.0328 & 0.132662 \\
-Outlier & 0.2091 & 0.007259 & 0.2294 & 0.220 & 0.2249 & 0.003535 & 0.2205 & 0.010427 \\
-Abalone & / & $\infty$ & 4.23 & 17.61 & 4.26 & 4.103455 & 4.10 & 0.464732 \\
-\hline
-\end{tabular}%
+```{=latex}
+\begin{center}
+\makebox[\textwidth][c]{
+\includegraphics[width=1.3\textwidth]{./assets/lbm_abalone_results.jpg}
 }
-\end{table}
+\end{center}
+```
 
+From the analysis of the convergence plots of the SVR with the **Level Bundle method**, several significant conclusions can be drawn: 
 
+- The **objective function** plot shows a **steady and monotonic decrease** until approximately *-3000*, indicating that the optimization is effectively progressing toward minimization.
 
-## Final Remarks
+- The **gradient norm** stabilizes around *745* after about *150* iterations, suggesting the attainment of a **stationary point**. 
+- The **distribution of step norms** reveals that the algorithm prefers step sizes between *0.05* and *0.15*, with a higher concentration around *0.075*, indicating a balanced behavior between exploration and exploitation of the solution space. 
+- Particularly interesting is the relationship between **gradient norm** and **step norm**, which shows two significant peaks around iteration *50*, suggesting that during that phase, the algorithm traversed regions with **strong curvature** or **gradient discontinuities**. 
 
-The results clearly indicate that solving a quadratic programming problem at every iteration considerably increases the training time. In contrast, the aggregated subgradient method, which involves simpler operations, converges more quickly. However, unlike the Level Bundle Method, the aggregated subgradient approach is highly sensitive to the choice of hyperparameters such as the aggregation strategy and step size. Incorrect parameter choices can lead to model instability.
-
-![](./assets/wrong_tol.jpeg)
-*Example of an SVR using aggregated subgradient with an excessively low tolerance*
-
-Furthermore, the oracle—implemented using SMO—demonstrates significantly superior training times compared to our models. This is primarily due to the fact that SMO employs a more efficient solver by leveraging the Karush-Kuhn-Tucker (KKT) conditions for faster convergence.
-
-Nevertheless, it is important to note that the mean error (MSE) achieved by our model does not deviate significantly from that of the oracle, despite the longer training times. This indicates that while our approach is computationally more intensive, it still yields competitive prediction accuracy.
+Overall, the **Level Bundle method** demonstrates good computational efficiency, achieving convergence in approximately *150* iterations with a stable trend in the objective function, characteristics that make it well-suited for complex optimization problems such as those addressed in the SVR context.

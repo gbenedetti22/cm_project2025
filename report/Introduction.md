@@ -4,9 +4,11 @@
 
 ## SVR and Level Bundle Method
 
-This project focuses on the development and implementation of an SVR (Support Vector for Regression) capable of learning from a dataset in the form of "feature x target," where "target" must be a vector of dimensions , in accordance with the definition of SVR. In addition to the basic implementation, a  ignificant part of the SVR will leverage the Level Bundle Method for optimizing the dual function. <br />
+This project focuses on the development and implementation of an SVR (Support Vector for Regression) capable of learning from a dataset in the form of "feature x target," where "target" must be a vector of dimensions , in accordance with the definition of SVR. In addition to the basic implementation, a  significant part of the SVR will leverage the Level Bundle Method for optimizing the dual function. <br />
 
-For the Master Problem of the SVR, the MATLAB function quadprog was used. This function is primarily designed for solving quadratic objective functions with linear terms.
+For the Master Problem of the **SVR with LBM**, the MATLAB function `quadprog` was used. This function is primarily designed for solving quadratic objective functions with linear terms.
+
+Instead, for the **general purpose SVR** the `fmincon` function was used since this function can solve non-linear problems, making it ideal for our use case.
 
 ## Support Vector for Regression (SVR)
 
@@ -32,7 +34,7 @@ $$
 & \max_{\alpha} && \sum_{i=1}^n y_i\alpha_i - \varepsilon \sum_{i=1}^n |\alpha_i| - \frac{1}{2} \sum_{i,j=1}^n \alpha_i\alpha_j K(x_i, x_j) \\
 & \text{subject to:} && \\
 & && \sum_{i=1}^n \alpha_i = 0, \\
-& && 0 \leq \alpha_i \leq C \quad \forall i = 1, \ldots, n.
+& && -C \leq \alpha_i \leq C \quad \forall i = 1, \ldots, n.
 \end{aligned}
 $$
 
@@ -79,11 +81,11 @@ $$
 \\[1em]
 & \mathrm{sign}(x) = 
 \begin{cases} 
-    \{1\},                & \text{if } x > 0, 
-    \\
-    \{-1\},               & \text{if } x < 0, 
-    \\
-    [-1,\ 1],             & \text{if } x = 0.
+1                & \text{if } x > 0, 
+\\
+-1               & \text{if } x < 0, 
+\\
+0             & \text{if } x = 0.
 \end{cases}
 \end{aligned}
 $$
@@ -137,7 +139,7 @@ $$
 & \text{s.t. :} \\
 & \qquad \hat{f_k}(\alpha) \leq f_k^{\text{level}} \\
 & \qquad \sum_{i=1}^n \alpha_i = 0 \\
-& \qquad 0 \leq \alpha_i \leq C \quad \forall i = 1, \ldots, n
+& \qquad -C \leq \alpha_i \leq C \quad \forall i = 1, \ldots, n
 \end{aligned}
 $$
 Thus, they must be rewritten into a form solvable by `quadprog`, just as we did for the objective function.
@@ -157,12 +159,12 @@ Where $\xi_j$ are the subgradients computed at those points and $f(\hat{\alpha_k
 This formulation must be rewritten in the form $A x \leq b$. Rewriting the constraint:
 $$
 \begin{aligned}  
-& f(\alpha_k) + \langle \xi_k, \alpha - \alpha_k \rangle \leq f^{\text{level}} \iff \langle \xi_k, \alpha \rangle - f^{\text{level}} \leq \langle \xi_j, \alpha_k \rangle - f(\alpha_k).  
+& f(\alpha_k) + \langle \xi_k, \alpha - \alpha_k \rangle \leq f^{\text{level}} \iff \langle \xi_k, \alpha \rangle - f^{\text{level}} \leq \langle \xi_j, \alpha_k \rangle - f(\alpha_k)
 \end{aligned}
 $$
 With:
 $$
-A = \begin{bmatrix} \xi_k^\top & -1 \end{bmatrix}, \quad b = \langle \xi_k, \hat{\alpha_k} \rangle - f(\hat{\alpha_k}).
+A = \begin{bmatrix} \xi_k^\top & -1 \end{bmatrix}, \quad b = \langle \xi_k, \hat{\alpha_k} \rangle - f(\hat{\alpha_k})
 $$
 
 Note that the current level $f_k^\text{level}$ is updated at each iteration using the following formula:
@@ -189,14 +191,14 @@ $$
 ### Bound Constraints
 $$
 \begin{aligned}
-0 &\leq \alpha_i \leq C,
+-C &\leq \alpha_i \leq C,
 \end{aligned}
 $$
 These can be defined as:
 $$
 \begin{aligned}
-lb &= [0,\, -\infty], \\
-ub &= [C,\, t_{\text{level}}].
+lb &= [-C,\, -\infty], \\
+ub &= [C,\, f_{\text{level}}].
 \end{aligned}
 $$
 
@@ -205,7 +207,7 @@ $$
 As previously described, this project aims to implement an SVR that leverages the Level Bundle Method for optimization.
 However, the goal is not to achieve a fully optimized SVR in terms of hyperparameters or generalization performance on the dataset cause this would require additional tuning techniques such as grid search or k-fold cross-validation, which are beyond the scope of this project.
 
-Nevertheless, we will present the error achieved using the Mean Squared Error (MSE) metric, along with the selected hyperparameters. Additionally, we will compare our implementation against MATLAB's native SVR solver, which will be used as an oracle. Although our goal is not to match the oracle's performance, this comparison will provide useful insights into the effectiveness of our approach.
+Nevertheless, we will present the error achieved using the Mean Squared Error (MSE) metric, along with the selected hyperparameters. Additionally, we will compare our implementation against SVR general solver (A1), which will be used as an oracle.
 
 ## Conclusion
 
