@@ -33,10 +33,3 @@ toc
 y_pred = svr.predict(X);
 
 disp(mse(y_pred, y));
-
-% figure; hold on;
-% plot(X, y, '-', 'LineWidth', 1, 'DisplayName', 'Dati training');
-% plot(X, y_pred, 'r-', 'LineWidth', 2, 'DisplayName', 'Predizione SVR');
-% scatter(X_sv, Y_sv, 'ks', 'MarkerFaceColor', 'g', 'DisplayName', 'Support Vectors');
-% xlabel('X'); ylabel('y'); title('SVR Duale (RBF) con Bundle Method');
-% legend; grid on;

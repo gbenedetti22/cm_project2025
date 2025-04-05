@@ -1,100 +1,107 @@
 classdef SVR < handle
-    properties(Access=protected)
+    properties(Access=private)
         kernel_function
-        C double
-        epsilon double
+        C 
+        epsilon 
         alpha_svr
         bias
         X_train
         opt
         tol
+        f_values
     end
 
     methods
-
-        
         function obj = SVR(params)
-            
-           % Verifica campi obbligatori
             required_fields = {'kernel_function', 'C', 'epsilon'};
             for f = required_fields
                 if ~isfield(params, f{1})
-                    error('Struct params must contain field: %s', f{1});
+                    error('Parametro mancante: %s', f{1});
                 end
             end
             
-            % Validazione kernel
             if ~isa(params.kernel_function, 'KernelFunction')
-                error('kernel_function must be a subclass of KernelFunction');
+                error('Kernel non valido');
             end
             obj.kernel_function = params.kernel_function;
-            
-            % Assegna parametri obbligatori
             obj.C = params.C;
             obj.epsilon = params.epsilon;
             
-            % Assegna parametri opzionali con default
             if isfield(params, 'opt')
-                if ~isempty(params.opt) && ( ~isobject(params.opt) || ~isa(params.opt, 'LBM') )
-                    error('opt must be a LBM object or empty');
-                end
                 obj.opt = params.opt;
             else
-                obj.opt = false;
+                obj.opt = [];
             end
             
             if isfield(params, 'tol')
                 obj.tol = params.tol;
             else
-                obj.tol = 1e-5;
+                obj.tol = 1e-5; % Valore di default
             end
         end
 
-        function [X_sv, Y_sv] = fit(obj, X, Y)
+        function [x, f_values] = fit(obj, X, Y)
             obj.X_train = X;
             K = obj.kernel_function.compute(X, X);
+            % Aggiungi regolarizzazione numerica
+            K = K + 1e-6 * eye(size(K));
+            
             if isa(obj.opt, 'LBM')
-                z = obj.opt.optimize(K, Y, obj.C,obj.epsilon);
+                [x, f_values] = obj.opt.optimize(K, Y, obj.C, obj.epsilon);
             else
-                H = [K, -K; -K, K];
-                f = [obj.epsilon + Y; obj.epsilon - Y]';
-                Aeq = [ones(1, length(Y)), -ones(1, length(Y))];
+                n = length(Y);
+                svr_dual = @(x) obj.svr_dual_function(x, K, Y, obj.epsilon);
+                alpha0 = zeros(n, 1);
+                
+                % Inizializza f_values e configura output function
+                obj.f_values = [];
+                outHandle  = @(x, optimValues, state) obj.outfun(x, optimValues, state);
+                
+                 options = optimoptions('fmincon', 'Display', 'iter', ...
+                    'SpecifyObjectiveGradient', true, 'MaxIterations', 50, ...
+                    'OutputFcn', outHandle);
+
+                Aeq = ones(1, n);
                 beq = 0;
-                lb = zeros(2*n, 1);
-                ub = obj.C * ones(2*n, 1);
 
-                if exist('mosekopt', 'file') == 3
-                    options = mskoptimset('Display', 'off');
-                else
-                    options = optimoptions('quadprog', 'Display', 'off');
-                end
-                z = quadprog(H, -f, [], [], Aeq, beq, lb, ub, [], options);
+                A = [];
+                b = [];
+
+                lb = -obj.C * ones(n, 1);
+                ub = obj.C * ones(n, 1);
+
+                x = fmincon(svr_dual, alpha0, A, b, Aeq, beq, lb, ub, [], options);
+                
+                
+                f_values = obj.f_values; % Recupera i valori registrati
             end
             
-            obj.alpha_svr = z;
-            % Identify support vectors
-            sv_indices = find(abs(obj.alpha_svr) > obj.tol);
+            obj.alpha_svr = x;
+            sv_indices = abs(obj.alpha_svr) > obj.tol;
             
-            if isempty(sv_indices)
-                X_sv = [];
-                Y_sv = [];
-                warning("Support vectors not found");
-
-                obj.bias = mean(Y - (K * obj.alpha_svr));
+            if any(sv_indices)
+                obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * x);
             else
-                X_sv = obj.X_train(sv_indices, :);
-                Y_sv = Y(sv_indices);
-
-                disp("alpha max: " + max(obj.alpha_svr));
-                disp("alpha min: " + min(obj.alpha_svr));
-
-                obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
+                obj.bias = mean(Y - K * x);
             end
+        end
+
+        function [f, g] = svr_dual_function(~, x, K, y, epsilon)
+            f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
+            g = K * x + epsilon * sign(x) - y;
         end
 
         function y_pred = predict(obj, X)
             K_test = obj.kernel_function.compute(X, obj.X_train);
             y_pred = K_test * obj.alpha_svr + obj.bias;
+        end
+
+        % Output function per registrare i valori della funzione obiettivo
+        function stop = outfun(obj, ~, optimValues, state)
+            stop = false;
+            if strcmp(state, 'iter')
+                obj.f_values = [obj.f_values; optimValues.fval];
+            end
         end
     end
 end
