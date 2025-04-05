@@ -12,21 +12,24 @@ The dataset is structured as follows:
 - The first 8 columns correspond to the input features.
 - The last column represents the target value (age of the abalone).
 
-Before training, the features are normalized using `zscore`:
+Firstly, we define the SVR dual function, which computes both the function value `f` and the corresponding subgradient `g`:
 
 ```matlab
-[X, y] = training_data("abalone"); % Alternatively: sin, exp ..
-X = zscore(X);
+Input:
+    x			% input vector
+    y			% target vector
+    epsilon		% scalar value
+    K           % kernel matrix
+
+Output:
+	f			% objective function value
+	g			% gradient
+    
+f = 0.5 * TRANSPOSE(x) * (K * x) + epsilon * SUM(ABS(x)) - TRANSPOSE(y) * x
+g = K * x + epsilon * SIGN(x) - y
 ```
 
-Next, we define the SVR dual function, which computes both the function value `f` and the corresponding subgradient `g`:
-
-```matlab
-function [f, g] = svr_dual_function(x, K, y, epsilon)
-    f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
-    g = K * x + epsilon * sign(x) - y;
-end
-```
+Before training, the features are normalized.
 
 \newpage
 
@@ -35,9 +38,6 @@ end
 For the implementation of a generic SVR solver, we formulated the dual problem using MATLAB’s lambda functions. Unlike quadprog, fmincon does not require explicit Hessian matrix definitions—a key advantage that significantly improves scalability for large-scale problems
 
 ```matlab
-% defining the lambda function
-svr_dual =  @(x) svr_dual_function(x, K, Y, epsilon);
-
 % Starting point
 alpha0 = zeros(n, 1);
 
@@ -52,22 +52,17 @@ beq = 0;
 % Lower and upper bounds: 0 <= alpha <= C
 lb = -C * ones(n, 1);
 ub = C * ones(n, 1);
-
-% Solve the non-linear quadratic problem using fmincon
-options = optimoptions('fmincon', 'Display', 'iter', ...
-	'SpecifyObjectiveGradient', true, 'MaxIterations', maxIter);
-
-alpha = fmincon(svr_dual, alpha0, A, b, Aeq, beq, lb, ub, [], options);
 ```
 
- Once `fmincon` has completed execution, we extract the **support vectors** from the solution.
+ Once the execution is completed, we extract the **support vectors** from the solution.
 
 ```matlab
-% Identify support vectors based on tolerance threshold
-sv_indices = find(abs(alpha) > tol);
+% Identify indices of support vectors
+% Select indices where the absolute value of alpha is greater than a threshold (tol)
+sv_indices = indices where |alpha[i]| > tol
 
-% Compute bias for the prediction phase
-bias = mean(Y(sv_indices) - K(sv_indices, :) * alpha);
+% Compute the bias term for prediction
+bias = mean( Y[i] - sum over j of K[i][j] * alpha[j] ), for all i in sv_indices
 ```
 
 ### Performance Evaluation
@@ -95,10 +90,10 @@ We evaluated this SVR implementation on both synthetic datasets and the **Abalon
 
 ## (A1) Level Bundle Method Implementation
 
-Previously, we mathematically formulated the objective function and constraints of the **Level Bundle Method (LBM)** in a format compatible with `quadprog`. We now translate these formulations into MATLAB code, ensuring a direct correspondence between the mathematical expressions and their implementation. Firstly we define the solver signature function as:
+Previously, we mathematically formulated the objective function and constraints of the **Level Bundle Method (LBM)** in a format compatible with `quadprog`. We now translate these formulations into code, ensuring a direct correspondence between the mathematical expressions and their implementation. Firstly we define the solver signature function as:
 
 ```matlab
-function alpha_opt = mp_solve(alpha_hat, bundle, f_level, C)
+alpha_opt = mp_solve(alpha_hat, bundle, f_level, C)
 ```
 
 Where:
@@ -117,7 +112,7 @@ $$
 H = I, \quad f = -\hat{x}_k.
 $$
 
-In MATLAB, this is implemented as:
+In pseudo-code, this is implemented as:
 
 ```matlab
 H = blkdiag(eye(n), 0); % n = length(alpha_hat)
@@ -318,8 +313,46 @@ lb = sparse([-C * ones(n, 1); -inf]);
 ub = sparse([C * ones(n, 1); f_level]);
 ```
 
+#### Performance Optimization: Convergency
+
+At this stage, our SVR implementation using the Level Bundle Method (LBM) successfully completes in reasonable time and achieves an **MSE** of **4.3729**, which is very close to the Oracle's performance, thanks to the optimizations implemented thus far. However, the convergence <u>remains relatively slow</u>, requiring more than **200 iterations**, unlike the Oracle which approaches the minimum after approximately **40 iterations**.
+
+This phenomenon is primarily due to the step sizes the algorithm takes: while the Oracle maintains an average step size of approximately 98, our algorithm averages only 1e-1. This limitation is largely attributable to the **matrix H** and the **linear term** that inherently penalize larger steps, thereby slowing convergence.
+
+To address this issue, we introduced a new hyperparameter called "*scale_factor*" that modifies our objective function:
+$$
+\frac{1}{2} \cdot \text{scale\_factor} \cdot \alpha^T\alpha - \text{scale\_factor} \cdot \alpha_k^T\alpha
+$$
+This scaling essentially **reduces the quadratic penalty** while proportionally adjusting the linear term, effectively increasing the **trust region** and consequently allowing larger steps. This modification enabled us to increase average step sizes from *1e-1* to approximately *87*, resulting in an improved **MSE** of **4.2569**, which is comparable to our **Oracle's performance (4.2191).**
+
+Nevertheless, despite the scaling factor, the algorithm still tends to decelerate significantly as it approaches the minimum value. In fact, to achieve that MSE value, we needed to further increase the number of iterations (approximately **120-150**). To overcome this limitation, we introduced **momentum** with **learning rate** applied to the alpha variables:
+$$
+v_\text{k+1} = \beta  v_k - \eta \cdot \xi_k \\
+\alpha_\text{k+1} = \alpha_k + v_\text{k+1}
+$$
+Where:
+
+- $\beta$ is the momentum factor
+- $v_k$ is the velocity
+- $\eta$ is the learning rate
+- $\xi$ is the sungradient
+
+In pseudo-code:
+
+```matlab
+velocity = momentum * velocity - learning_rate * g;
+alpha = alpha + velocity;
+
+---
+
+H = blkdiag(speye(n) * scale_factor, 0);
+f = sparse([-alpha_hat * scale_factor; 0]);
+```
+
+This implementation ensures that the method initially takes **large steps** and gradually slows down as it approaches the optimum, while still maintaining adequate step sizes. Unfortunately, this introduced two new hyperparameters (learning rate and momentum) which, if not appropriately selected, can cause the objective function to **diverge**.
+
 #### Choosing the Solver: Is Quadprog Really the Best Option?
 
-The current implementation relies on **quadprog**, with a training time of approximately **300 seconds**, but alternative solvers could significantly improve time efficiency.
+The current implementation relies on **quadprog**, with a training time of approximately **50 seconds**, but alternative solvers could significantly improve time efficiency.
 
 Further gains can be achieved by adopting **high-performance solvers** optimized for large-scale problems, as such alternatives leverage best algorithms and parallelization. This could reduce training times by **an order of magnitude** without compromising accuracy.

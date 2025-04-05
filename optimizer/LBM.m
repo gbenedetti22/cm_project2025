@@ -1,69 +1,71 @@
 classdef LBM < handle    
     properties(Access=private)
-        max_iter
-        epsilon
         tol
         theta
         max_constraints
+        lr
+        momentum
+        scale_factor
     end
     
     methods
-        function obj = LBM(max_iter, epsilon, tol, theta, max_constraints)
-            if nargin < 1
-                max_iter = 500;
-            end
-            if nargin < 2
-                epsilon = 1e-6;
-            end
-            if nargin < 3
-                tol = 1e-6;
-            end
-            if nargin < 4
-                theta = 0.5;
-            end
-            if nargin < 5
-                max_constraints = inf;
+        function obj = LBM(params)
+            if ~isstruct(params)
+                error('Input must be a valid struct');
             end
 
-            obj.max_iter = max_iter;
-            obj.epsilon = epsilon;
-            obj.tol = tol;
-            obj.theta = theta;
-            obj.max_constraints = max_constraints;
+            default_params = struct(...
+                'tol', 1e-6,...
+                'theta', 0.5,...
+                'lr', 1e-6,...
+                'momentum', 0.6,...
+                'scale_factor', 1e-8,...
+                'max_constraints', inf....
+            );
+
+            all_fields = fieldnames(default_params);
+            for i = 1:length(all_fields)
+                field = all_fields{i};
+                if isfield(params, field)
+                    obj.(field) = params.(field);
+                else
+                    obj.(field) = default_params.(field);
+                end
+            end
         end
         
-        function [alpha, f_values] = optimize(obj, K, y, C)
+        function [alpha, f_values, f_times] = optimize(obj, K, y, C, max_iter, epsilon)
             n = length(y);
             z = zeros(n, 1);
-            [f, g] = obj.svr_dual_function(z, K, y, obj.epsilon);
+            [f, g] = obj.svr_dual_function(z, K, y, epsilon);
             f_best = f;
 
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
 
-            f_values = nan(obj.max_iter, 1);
-            momentum = 0.5;
-            lr = 1e-5;
+            f_values = nan(max_iter, 1);
+            f_times = nan(max_iter, 1);
             velocity = zeros(size(z));
             
-            h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
-            for iter = 1:obj.max_iter
+            % h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
+            tic
+            for iter = 1:max_iter
                 level = obj.theta * f + (1 - obj.theta) * f_best;
 
                 z_new = obj.mp_solve(z, bundle, level, C);
                 step = z_new - z;
                 z = z_new;
 
-                [f_new, g_new] = obj.svr_dual_function(z_new, K, y, obj.epsilon);
-                f_values(iter) = f_new;
-                addpoints(h, iter, norm(z_new));
-                drawnow;
+                [f_new, g_new] = obj.svr_dual_function(z_new, K, y, epsilon);
 
-                velocity = momentum * velocity - lr * g_new;
-
+                velocity = obj.momentum * velocity - obj.lr * g_new;
                 z_new = z_new + velocity;
 
+                f_values(iter) = f_new;
+                f_times(iter) = toc;
+                % addpoints(h, iter, norm(z_new));
+                % drawnow;
                 fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Step norm: %.6e\n', ...
                     iter, f_new, norm(g_new), norm(step));
                 
@@ -105,14 +107,12 @@ classdef LBM < handle
         end
 
         
-        function alpha_opt = mp_solve(~, alpha_hat, bundle, f_level, C)
+        function alpha_opt = mp_solve(obj, alpha_hat, bundle, f_level, C)
             n = length(alpha_hat);
             m = length(bundle.f);
 
-            scale_factor = 1e-6;
-
-            H = blkdiag(speye(n) * scale_factor, 0);
-            f = sparse([-alpha_hat * scale_factor; 0]);
+            H = blkdiag(speye(n) * obj.scale_factor, 0);
+            f = sparse([-alpha_hat * obj.scale_factor; 0]);
 
             A = sparse([bundle.g' -ones(m, 1)]);
             b = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');

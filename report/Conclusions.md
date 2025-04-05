@@ -1,62 +1,59 @@
 \newpage
-# Conclusions
+# Achieved Results
 
-## Hyperparameters Used
+In this chapter, we present the results obtained on various datasets, comparing the SVR with Level Bundle Method (LBM) against a classical SVR implementation, referred to as the *Oracle*. The hyperparameters used in each experiment are reported, and efforts were made to keep them as similar as possible to ensure a fair comparison.
 
-During the hyperparameter selection phase for the various SVR models, we maintained the same values as much as possible to ensure a fair and consistent comparison among the different approaches.
+As stated in the introductory chapter, the goal of this project is **not** to achieve the best possible MSE through extensive hyperparameter tuning. Instead, the objective is to demonstrate that the Level Bundle Method can deliver **comparable—if not superior—performance** to that of a classical SVR.
 
-### SVR Parameters:
-- **`kernel_function`**: `RBFKernel()` 
+The dataset used are: Abalone, ...
 
-  *Kernel function used in the Support Vector Regression (SVR) model (Radial Basis Function Kernel in this case).*
+## Abalone
 
-- **`C`**: 1
-  
-   *Regularization parameter for the SVR model, controlling the trade-off between model complexity and training error.*
-  
-- **`epsilon`**: 0.05
-  
-  *Epsilon margin for the SVR model, defining the tolerance for prediction errors.*
-  
-- **`max_iter`**: 500 
-  
-  *Maximum number of iterations for the Level Bundle Method (LBM).*
-  
-- **`opt`**: `lbm` 
-  
-  *Optimizer used for the SVR model (Level Bundle Method in this case).*
+### Common Parameters
+| Parameter | Value |
+| :-------- | ----- |
+| Kernel    | RBF   |
+| C         | 1     |
+| Epsilon   | 0.05  |
 
-### LBM Parameters:
-- **`tol`**: 1e-3 
-  
-  *Tolerance for the subgradient step in the LBM (stopping criteria).*
-  
-- **`theta`**: 0.1
-  
-  *Convex combination parameter used in the LBM.*
-  
-- **`max_constraints`**: 50
-  
-  *Maximum number of constraints allowed in the bundle.*
+### Oracle
+| Iterations | MSE    | Time (s) |
+| ---------- | ------ | -------- |
+| 60         | 4.2186 | 292.2166 |
 
-## Results
 
-Thanks to the optimizations introduced so far, our LBM method achieved **sustainable performance**, with a **Mean Squared Error (MSE) of 4.3729**, and a **linear convergence rate**. This result is totally comparable with the Oracle that obtained an **MSE of 4.2187**  as shown in the previous chapter.
+### SVR with Level Bundle Method (LBM)
 
-```{=latex}
-\begin{center}
-\makebox[\textwidth][c]{
-\includegraphics[width=1.3\textwidth]{./assets/lbm_abalone_results.jpg}
-}
-\end{center}
-```
+- **tol**: `1e-2`  
+  Tolerance for stopping criterion.
+- **theta**: `0.5`  
+  Controls the trade-off between cutting plane approximation and descent direction.
+- **lr** (learning rate): `1e-07`  
+  Step size for the gradient-based update.
+- **momentum**: `0.3`  
+  Momentum term to accelerate convergence and avoid local minima.
+- **scale_factor**: `1e-05`  
+  Scaling coefficient applied to linear and quadratic terms.
+- **max_constraints**: `60`  
+  Maximum number of cutting planes (constraints) maintained in the bundle.
 
-From the analysis of the convergence plots of the SVR with the **Level Bundle method**, several significant conclusions can be drawn: 
+| Iterations | MSE    | Time (s) |
+| ---------- | ------ | -------- |
+| 60         | 4.2819 | 28.2933  |
+| 90         | 4.1963 | 88.0550  |
 
-- The **objective function** plot shows a **steady and monotonic decrease** until approximately *-3000*, indicating that the optimization is effectively progressing toward minimization.
+As observed, the *Oracle* achieves excellent results in just a few iterations, which suggests that `fmincon` is a highly effective solver for this specific type of problem. We also experimented with other alternatives, such as `quadprog`, but the resulting Hessian matrix proved to be unmanageable for large-scale problems like this one, making its use impractical.
 
-- The **gradient norm** stabilizes around *745* after about *150* iterations, suggesting the attainment of a **stationary point**. 
-- The **distribution of step norms** reveals that the algorithm prefers step sizes between *0.05* and *0.15*, with a higher concentration around *0.075*, indicating a balanced behavior between exploration and exploitation of the solution space. 
-- Particularly interesting is the relationship between **gradient norm** and **step norm**, which shows two significant peaks around iteration *50*, suggesting that during that phase, the algorithm traversed regions with **strong curvature** or **gradient discontinuities**. 
+An interesting observation is that once the minimum is reached, `fmincon` tends to plateau without further improvements. However, the major drawback is the training time: the average time between iterations is around **6 seconds**, resulting in very high total runtimes.
 
-Overall, the **Level Bundle method** demonstrates good computational efficiency, achieving convergence in approximately *150* iterations with a stable trend in the objective function, characteristics that make it well-suited for complex optimization problems such as those addressed in the SVR context.
+Our SVR implementation with LBM, on the other hand, performs slightly worse with the same number of iterations, but when increasing the iteration count moderately, it achieves an **even lower MSE** than the Oracle.
+
+![](./assets/time.jpg)
+
+This graph shows the behavior of the function at the same time t, using the best parameters for both SVRs. Since the times for the 2 SVRs are markedly different, the values have been interpolated to the values at the common time, so it is easier to understand what happens at time t.
+
+One particularly interesting aspect, evident from this time-based plot, is that up to around **60 seconds**, our LBM-SVR approaches the function minimum much faster, while the Oracle lags significantly behind. Notably, there exists a time `t` at which both models reach **similar performance levels**.
+
+![](./assets/cazzillo_2.jpg)
+
+Another key observation comes from the **relative gap** plot: despite the differences in runtime, the learning behavior is remarkably comparable. This indicates that the introduction of regularization had a **stabilizing effect** on the optimization dynamics.
