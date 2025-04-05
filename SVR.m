@@ -1,5 +1,5 @@
 classdef SVR < handle
-    properties(Access=protected)
+    properties(Access=private)
         kernel_function
         C double
         epsilon double
@@ -8,91 +8,103 @@ classdef SVR < handle
         X_train
         opt
         tol
+        f_values
     end
 
     methods
-        function obj = SVR(params)
-            
-           % Verifica campi obbligatori
-            required_fields = {'kernel_function', 'C', 'epsilon'};
-            for f = required_fields
-                if ~isfield(params, f{1})
-                    error('Struct params must contain field: %s', f{1});
+        function obj = SVR(kernel_function, C, epsilon, opt, tol)
+           if isa(kernel_function, 'KernelFunction')
+                obj.kernel_function = kernel_function;
+                obj.C = C;
+                obj.epsilon = epsilon;
+
+                if nargin < 4
+                    opt = false;
+                else
+                    if not(isobject(opt)) || not(isa(opt, 'LBM'))
+                        error('invalid optimizer');
+                    end
                 end
-            end
-            
-            % Validazione kernel
-            if ~isa(params.kernel_function, 'KernelFunction')
+                   
+                if nargin < 5
+                    tol = 1e-5;
+                end
+
+                obj.opt = opt;
+                obj.tol = tol;
+            else
                 error('kernel_function must be a subclass of KernelFunction');
             end
-            obj.kernel_function = params.kernel_function;
-            
-            % Assegna parametri obbligatori
-            obj.C = params.C;
-            obj.epsilon = params.epsilon;
-            
-            % Assegna parametri opzionali con default
-            if isfield(params, 'opt')
-                if ~isempty(params.opt) && ( ~isobject(params.opt) || ~isa(params.opt, 'LBM') )
-                    error('opt must be a LBM object or empty');
-                end
-                obj.opt = params.opt;
-            else
-                obj.opt = false;
-            end
-            
-            if isfield(params, 'tol')
-                obj.tol = params.tol;
-            else
-                obj.tol = 1e-5;
-            end
+
         end
 
-        function [X_sv, Y_sv] = fit(obj, X, Y)
+        function [x, f_values] = fit(obj, X, Y)
             obj.X_train = X;
             K = obj.kernel_function.compute(X, X);
-            n = size(Y, 1);
 
             if isa(obj.opt, 'LBM')
-                % Utilizza LBM per ottimizzare la formulazione non differenziabile
-                % La funzione 'optimize' dovrà risolvere:
-                % min_{u in [-C,C]^n, sum(u)=0} 0.5*u'*K*u + epsilon*sum(|u|) - Y'*u
-                u = obj.opt.optimize(K, Y, obj.C, obj.epsilon);
-                obj.alpha_svr = u;
+                [x, f_values] = obj.opt.optimize(K, Y, obj.C);
             else
-                % In alternativa, utilizzare la formulazione QP standard con alpha e alpha*
-                H = [K, -K; -K, K];
-                f = [obj.epsilon + Y; obj.epsilon - Y];
-                Aeq = [ones(1, n), -ones(1, n)];
+                n = length(Y);
+
+                svr_dual =  @(x) obj.svr_dual_function(x, K, Y, obj.epsilon);
+               
+                alpha0 = zeros(n, 1);
+
+                Aeq = ones(1, n);
                 beq = 0;
-                lb = zeros(2*n, 1);
-                ub = obj.C * ones(2*n, 1);
-                options = optimoptions('quadprog', 'Display', 'off');
-                z = quadprog(H, -f, [], [], Aeq, beq, lb, ub, [], options);
 
-                alpha_pos = z(1:n);
-                alpha_neg = z(n+1:end);
-                obj.alpha_svr = alpha_pos - alpha_neg;
+                A = [];
+                b = [];
+
+                lb = -obj.C * ones(n, 1);
+                ub = obj.C * ones(n, 1);
+
+                outHandle = @(x, optimValues, state) obj.outfun(x, optimValues, state);
+
+                % 'PlotFcn', {@optimplotfval}, ...
+                options = optimoptions('fmincon', 'Display', 'iter', ...
+                    'SpecifyObjectiveGradient', true, 'MaxIterations', 50, ...
+                    'OutputFcn', outHandle);
+
+                x = fmincon(svr_dual, alpha0, A, b, Aeq, beq, lb, ub, [], options);
+                f_values = obj.f_values;
             end
-
-            % Identifica i vettori di supporto
+            
+            obj.alpha_svr = x;
+            
             sv_indices = find(abs(obj.alpha_svr) > obj.tol);
-
+            
             if isempty(sv_indices)
-                X_sv = [];
-                Y_sv = [];
                 warning("Support vectors not found");
+
                 obj.bias = mean(Y - (K * obj.alpha_svr));
             else
-                X_sv = obj.X_train(sv_indices, :);
-                Y_sv = Y(sv_indices);
                 obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
             end
         end
+
+        function [f, g] = svr_dual_function(~, x, K, y, epsilon)
+            f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
+
+            g = K * x + epsilon * sign(x) - y;
+        end
+
         function y_pred = predict(obj, X)
-            % Calcola il kernel tra i nuovi dati e il training set
             K_test = obj.kernel_function.compute(X, obj.X_train);
             y_pred = K_test * obj.alpha_svr + obj.bias;
+        end
+
+        function stop = outfun(obj, ~, optimValues, state)
+            if strcmp(state, 'init')
+                obj.f_values = [];
+            end
+
+            if strcmp(state, 'iter')
+                obj.f_values = [obj.f_values; optimValues.fval];
+            end
+
+            stop = false;
         end
 
     end
