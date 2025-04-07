@@ -7,6 +7,28 @@ switch lower(dataset)
         
         X = table2array(data(:, 1:end-1));
         Y = table2array(data(:, end));
+
+    case "winequality_red"
+        data = readtable(fullfile('data', 'winequality_red.data'),...
+                        'Delimiter', ';', 'FileType', 'text');
+        
+        X = table2array(data(:, 1:end-1));
+        Y = table2array(data(:, end));  % Quality score (0-10)
+
+    case "winequality_white"
+     data = readtable(fullfile('data', 'winequality_white.data'),...
+                        'Delimiter', ';', 'FileType', 'text');
+        
+        X = table2array(data(:, 1:end-1));
+        Y = table2array(data(:, end));  % Quality score (0-10)
+
+    
+    case "airfoil"
+        data = readtable('airfoil.data', 'FileType', 'text', 'Delimiter', '\t');
+        X = table2array(data(:, 1:end-1));
+        Y = table2array(data(:, end));
+
+
     case "sin"
         X = linspace(-2, 2, 100)';
         Y = sin(3*X) + 0.1 * randn(size(X));
