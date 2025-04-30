@@ -1,65 +1,65 @@
 classdef SVR < handle
     properties(Access=private)
         kernel_function
-        C 
-        epsilon 
+        C double
+        epsilon double
+        max_iter
         alpha_svr
         bias
         X_train
         opt
         tol
         f_values
+        f_times
     end
 
     methods
         function obj = SVR(params)
-            required_fields = {'kernel_function', 'C', 'epsilon'};
-            for f = required_fields
-                if ~isfield(params, f{1})
-                    error('Parametro mancante: %s', f{1});
-                end
+            default_params = struct(...
+                'max_iter', 90, ...
+                'C',        1, ...
+                'epsilon',  0.05, ...
+                'tol',      1e-5, ...
+                'opt',      false ...
+                );
+
+            if ~isfield(params, 'kernel_function')
+                error('Struct params must contain field: kernel_function');
             end
-            
+
             if ~isa(params.kernel_function, 'KernelFunction')
-                error('Kernel non valido');
+                error('kernel_function must be a subclass of KernelFunction');
             end
             obj.kernel_function = params.kernel_function;
-            obj.C = params.C;
-            obj.epsilon = params.epsilon;
-            
-            if isfield(params, 'opt')
-                obj.opt = params.opt;
-            else
-                obj.opt = [];
+
+            all_fields = fieldnames(default_params);
+            for i = 1:length(all_fields)
+                field = all_fields{i};
+                if isfield(params, field)
+                    obj.(field) = params.(field);
+                else
+                    obj.(field) = default_params.(field);
+                end
             end
-            
-            if isfield(params, 'tol')
-                obj.tol = params.tol;
-            else
-                obj.tol = 1e-5; % Valore di default
-            end
+
+            validateattributes(obj.max_iter, {'numeric'}, {'positive', 'integer'});
+            validateattributes(obj.epsilon, {'numeric'}, {'positive'});
         end
 
-        function [x, f_values] = fit(obj, X, Y)
+
+
+        function [x, f_values, f_times] = fit(obj, X, Y)
             obj.X_train = X;
             K = obj.kernel_function.compute(X, X);
-            % Aggiungi regolarizzazione numerica
-            K = K + 1e-6 * eye(size(K));
-            
+
             if isa(obj.opt, 'LBM')
-                [x, f_values] = obj.opt.optimize(K, Y, obj.C, obj.epsilon);
+                [x, f_values, f_times] = obj.opt.optimize(K, Y, obj.C, obj.max_iter, obj.epsilon);
             else
                 n = length(Y);
-                svr_dual = @(x) obj.svr_dual_function(x, K, Y, obj.epsilon);
+
+                svr_dual =  @(x) obj.svr_dual_function(x, K, Y, obj.epsilon);
+               
                 alpha0 = zeros(n, 1);
-                
-                % Inizializza f_values e configura output function
-                obj.f_values = [];
-                outHandle  = @(x, optimValues, state) obj.outfun(x, optimValues, state);
-                
-                 options = optimoptions('fmincon', 'Display', 'iter', ...
-                    'SpecifyObjectiveGradient', true, 'MaxIterations', 50, ...
-                    'OutputFcn', outHandle);
 
                 Aeq = ones(1, n);
                 beq = 0;
@@ -70,24 +70,34 @@ classdef SVR < handle
                 lb = -obj.C * ones(n, 1);
                 ub = obj.C * ones(n, 1);
 
+                outHandle = @(x, optimValues, state) obj.outfun(x, optimValues, state);
+
+                % 'PlotFcn', {@optimplotfval}, ...
+                options = optimoptions('fmincon', 'Display', 'iter', ...
+                    'SpecifyObjectiveGradient', true, 'MaxIterations', obj.max_iter, ...
+                    'OutputFcn', outHandle);
+
                 x = fmincon(svr_dual, alpha0, A, b, Aeq, beq, lb, ub, [], options);
-                
-                
-                f_values = obj.f_values; % Recupera i valori registrati
+                f_values = obj.f_values;
+                f_times = obj.f_times;
             end
             
             obj.alpha_svr = x;
-            sv_indices = abs(obj.alpha_svr) > obj.tol;
             
-            if any(sv_indices)
-                obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * x);
+            sv_indices = find(abs(obj.alpha_svr) > obj.tol);
+            
+            if isempty(sv_indices)
+                warning("Support vectors not found");
+
+                obj.bias = mean(Y - (K * obj.alpha_svr));
             else
-                obj.bias = mean(Y - K * x);
+                obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
             end
         end
 
         function [f, g] = svr_dual_function(~, x, K, y, epsilon)
             f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
+
             g = K * x + epsilon * sign(x) - y;
         end
 
@@ -96,12 +106,20 @@ classdef SVR < handle
             y_pred = K_test * obj.alpha_svr + obj.bias;
         end
 
-        % Output function per registrare i valori della funzione obiettivo
         function stop = outfun(obj, ~, optimValues, state)
-            stop = false;
+            if strcmp(state, 'init')
+                obj.f_values = [];
+                obj.f_times = [];
+                tic
+            end
+
             if strcmp(state, 'iter')
                 obj.f_values = [obj.f_values; optimValues.fval];
+                obj.f_times = [obj.f_times; toc];
             end
+
+            stop = false;
         end
+
     end
 end
