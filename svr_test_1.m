@@ -3,37 +3,36 @@ clc; clear; close all;
 [X, y] = training_data("abalone");
 X = zscore(X);
 
-% Parametri SVR
-epsilon = 0.05;
-C = 1;
-maxIter = 200;
-tol = 1e-12;
-theta = 0.1;
-max_constraint = 50;
+sigma = 0.4;
 
-% Parametri per il kernel RBF
-sigma = 0.5;
+lbm_params = struct(...
+        'tol',             1e-2, ...
+        'theta',           0.8, ...
+        'max_constraints', 60 ...
+    );
 
-kernel_function = RBFKernel(sigma);
+    lbm = LBM(lbm_params);
+    svr_params = struct(...
+        'max_iter',        60, ...
+        'kernel_function', RBFKernel(sigma), ...
+        'C',               1, ...
+        'epsilon',         0.05, ...
+        'opt',             lbm ...
+    );
 
-lbm = LBM(maxIter, epsilon, tol, theta, max_constraint);
-svr = SVR(kernel_function, C, epsilon, lbm);
+svr_lbm = SVR(svr_params);
 
-fprintf("Training start..\n");
-tic
+[x_lbm, f_values_lbm, f_times_lbm] = svr_lbm.fit(X, y);
 
-svr.fit(X, y);
+y_pred = svr_lbm.predict(X);
 
-toc
+disp("MSE (LBM): " + mse(y_pred, y));
 
-fprintf("Training end! :) \n");
+% plot_gap(x, f_values, x_lbm, f_values_lbm);
+% plot_time(f_values, f_times, f_values_lbm, f_times_lbm);
 
-y_pred = svr.predict(X);
-
-disp("MSE: " + mse(y_pred, y));
-
-% figure; hold on;
-% plot(X, y, '-', 'LineWidth', 1, 'DisplayName', 'Training data');
-% plot(X, y_pred, 'r-', 'LineWidth', 2, 'DisplayName', 'SVR Predictions');
-% xlabel('X'); ylabel('y'); title('SVR (with RBF Kernel) using LBM', 'FontSize', 22);
-% legend('FontSize', 18); grid on;
+figure; hold on;
+plot(X, y, '-', 'LineWidth', 1, 'DisplayName', 'Training data');
+plot(X, y_pred, 'r-', 'LineWidth', 2, 'DisplayName', 'SVR Predictions');
+xlabel('X'); ylabel('y'); title('SVR (with RBF Kernel) using LBM', 'FontSize', 22);
+legend('FontSize', 18); grid on;

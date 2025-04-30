@@ -46,12 +46,12 @@ classdef LBM < handle
 
             f_values = nan(max_iter, 1);
             f_times = nan(max_iter, 1);
-            velocity = zeros(size(z));
             
             % h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
-            tic
+            % tic
             for iter = 1:max_iter
-                level = obj.theta * f + (1 - obj.theta) * f_best;
+                lb = obj.compute_lower_bound(bundle, C);
+                level = lb + obj.theta * (f_best - lb);
 
                 z_new = obj.mp_solve(z, bundle, level, C);
                 step = z_new - z;
@@ -59,12 +59,9 @@ classdef LBM < handle
 
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, epsilon);
 
-                velocity = obj.momentum * velocity - obj.lr * g_new;
-                z_new = z_new + velocity;
-
                 f_values(iter) = f_new;
                 f_times(iter) = toc;
-                % addpoints(h, iter, norm(z_new));
+                % addpoints(h, iter, level);
                 % drawnow;
                 fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Step norm: %.6e\n', ...
                     iter, f_new, norm(g_new), norm(step));
@@ -82,11 +79,6 @@ classdef LBM < handle
                 bundle.z = [bundle.z, z_new];
                 bundle.f = [bundle.f, f_new];
                 bundle.g = [bundle.g, g_new];
-                
-                if f_new <= level
-                    z = z_new;
-                    f = f_new;
-                end
 
                 if norm(step) < obj.tol
                     break;
@@ -106,13 +98,34 @@ classdef LBM < handle
             g = K * x + epsilon * sign(x) - y;
         end
 
+        function lb = compute_lower_bound(~, bundle, C)
+            [n, m] = size(bundle.z);
+
+            A = [bundle.g', -ones(m, 1)];
+            b = sum(bundle.g .* bundle.z, 1)' -bundle.f';
+
+            f   = [zeros(n, 1); 1];
+            Aeq = [ones(1, n), 0];
+            beq = 0;
+            lb  = [-C * ones(n, 1); -inf];
+            ub  = [ C * ones(n, 1);  inf];
+
+            options = optimoptions('linprog', 'Display', 'off');
+            [~, lb, exitflag] = linprog(f, A, b, Aeq, beq, lb, ub, options);
+
+            if exitflag <= 0
+                warning('Error while computing lower bound');
+                lb = min(bundle.f);
+            end
+        end
+
         
-        function alpha_opt = mp_solve(obj, alpha_hat, bundle, f_level, C)
+        function alpha_opt = mp_solve(~, alpha_hat, bundle, f_level, C)
             n = length(alpha_hat);
             m = length(bundle.f);
 
-            H = blkdiag(speye(n) * obj.scale_factor, 0);
-            f = sparse([-alpha_hat * obj.scale_factor; 0]);
+            H = blkdiag(speye(n), 0);
+            f = sparse([-alpha_hat; 0]);
 
             A = sparse([bundle.g' -ones(m, 1)]);
             b = sparse(sum(bundle.g .* bundle.z, 1)' - bundle.f');
@@ -123,7 +136,7 @@ classdef LBM < handle
             lb = sparse([-C * ones(n, 1); -inf]);
             ub = sparse([C * ones(n, 1); f_level]);
 
-            options = optimoptions('quadprog','Display','off');
+            options = optimoptions('quadprog', 'Display', 'off');
 
             [sol, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
 

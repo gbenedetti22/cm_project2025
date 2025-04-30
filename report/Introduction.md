@@ -4,7 +4,7 @@
 
 ## SVR and Level Bundle Method
 
-This project focuses on the development and implementation of an SVR (Support Vector for Regression) capable of learning from a dataset in the form of "feature x target," where "target" must be a vector of dimensions , in accordance with the definition of SVR. In addition to the basic implementation, a  significant part of the SVR will leverage the Level Bundle Method for optimizing the dual function. <br />
+This project focuses on the development and implementation of an SVR (Support Vector for Regression) capable of learning from a dataset in the form of "feature x target," where "target" must be a vector of dimensions `n x 1`, in accordance with the definition of SVR. In addition to the basic implementation, a significant part of the SVR will leverage the Level Bundle Method for optimizing the dual function. <br />
 
 For the Master Problem of the **SVR with LBM**, the MATLAB function `quadprog` was used. This function is primarily designed for solving quadratic objective functions with linear terms.
 

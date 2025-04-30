@@ -7,6 +7,19 @@ switch lower(dataset)
         
         X = table2array(data(:, 1:end-1));
         Y = table2array(data(:, end));
+
+    case "wine"
+        data = readtable(fullfile('data', 'winequality_red.data'),...
+                        'Delimiter', ';', 'FileType', 'text');
+        
+        X = table2array(data(:, 1:end-1));
+        Y = table2array(data(:, end));
+    
+    case "airfoil"
+        data = readtable('airfoil.data', 'FileType', 'text', 'Delimiter', '\t');
+        X = table2array(data(:, 1:end-1));
+        Y = table2array(data(:, end));
+
     case "sin"
         X = linspace(-2, 2, 100)';
         Y = sin(3*X) + 0.1 * randn(size(X));
@@ -24,7 +37,17 @@ switch lower(dataset)
         Y = sin(X);
         outlier_idx = randperm(100, 10);  % 10 outlier casuali
         Y(outlier_idx) = Y(outlier_idx) + 2*randn(10,1);
-        
+    case "friedman"
+        rng(98)
+
+        n_samples = 500;
+        n_features = 100;
+
+        X = rand(n_samples, n_features);
+        Y = 10 * sin(pi * X(:,1) .* X(:,2)) + 20 * (X(:,3) - 0.5).^2 + 10 * X(:,4) + 5 * X(:,5);
+        Y = Y + randn(n_samples, 1);
+
+        rng("default");
     otherwise
         error("No dataset found for: " + dataset)
 

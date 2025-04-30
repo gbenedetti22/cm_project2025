@@ -7,14 +7,13 @@ function plot_gap(f_opt_fmincon, f_values_fmincon, f_opt_bundle, f_values_bundle
     gap_bundle = abs(f_values_bundle - norm(f_opt_bundle)) / norm(f_opt_bundle);
     
     figure;
-    semilogy(1:length(gap_fmincon), gap_fmincon, '-o', 'LineWidth', 2, 'DisplayName', 'FMINCON');
+    semilogy(1:length(gap_fmincon), gap_fmincon, '-o', 'LineWidth', 2, 'DisplayName', 'Oracle');
     hold on;
     semilogy(1:length(gap_bundle), gap_bundle, '-s', 'LineWidth', 2, 'DisplayName', 'Level Bundle');
     hold off;
     
-    xlabel('Iterazioni');
-    ylabel('Gap relativo |f_k - f^*| / |f^*|');
-    title('Convergenza degli algoritmi');
+    xlabel('Iterations');
+    ylabel('Relative gap |f_k - f^*| / |f^*|');
     legend('Location', 'best', 'FontSize', 16);
     grid on;
 end

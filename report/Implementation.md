@@ -5,16 +5,14 @@
 ## Dataset
 
 Initially, we used simple functions such as sine, exponential, and step functions with added noise. These synthetic datasets allowed us to test and verify the correctness of our SVR implementation in terms of predictions and performance. <br/>
-Subsequently, we moved to a larger and more complex dataset: the **Abalone dataset**. This is a regression dataset where the goal is to predict the age of abalones based on various features.
+Subsequently, we moved our evaluation to larger and more complex real-world datasets for thoroughly assess the true performance and robustness of our SVR model under challenging conditions.
 
-The dataset is structured as follows:
-
-- The first 8 columns correspond to the input features.
-- The last column represents the target value (age of the abalone).
+### SVR Dual Function implementation
 
 Firstly, we define the SVR dual function, which computes both the function value `f` and the corresponding subgradient `g`:
 
 ```matlab
+function svr_dual_functon(alpha_hat, bundle, f_level, C):
 Input:
     x			% input vector
     y			% target vector
@@ -24,7 +22,7 @@ Input:
 Output:
 	f			% objective function value
 	g			% gradient
-    
+
 f = 0.5 * TRANSPOSE(x) * (K * x) + epsilon * SUM(ABS(x)) - TRANSPOSE(y) * x
 g = K * x + epsilon * SIGN(x) - y
 ```
@@ -38,20 +36,24 @@ Before training, the features are normalized.
 For the implementation of a generic SVR solver, we formulated the dual problem using MATLAB’s lambda functions. Unlike quadprog, fmincon does not require explicit Hessian matrix definitions—a key advantage that significantly improves scalability for large-scale problems
 
 ```matlab
-% Starting point
-alpha0 = zeros(n, 1);
+svr_dual =  lambda(x) { svr_dual_function(x, K, Y, epsilon) }
 
-% Inequality constraints
-A = [];
-b = 0;
+# Starting point
+alpha0 = ZEROS(n, 1)
 
-% Equality constraint: sum(alpha) = 0
-Aeq = ones(1, n);
-beq = 0;
+# Inequality constraints (none in this case)
+A = EMPTY_MATRIX
+b = 0
 
-% Lower and upper bounds: 0 <= alpha <= C
-lb = -C * ones(n, 1);
-ub = C * ones(n, 1);
+# Equality constraint: SUM(alpha) = 0
+Aeq = ONES(1, n)
+beq = 0
+
+# Bounds: -C <= alpha <= C
+lb = -C * ONES(n, 1)
+ub =  C * ONES(n, 1)
+
+alpha = QP_SOLVE(svr_dual, alpha0, A, b, Aeq, beq, lb, ub)
 ```
 
  Once the execution is completed, we extract the **support vectors** from the solution.
@@ -67,7 +69,9 @@ bias = mean( Y[i] - sum over j of K[i][j] * alpha[j] ), for all i in sv_indices
 
 ### Performance Evaluation
 
-We evaluated this SVR implementation on both synthetic datasets and the **Abalone dataset**. While the model generalizes well on synthetic data, its performance deteriorates significantly on the Abalone dataset due to the **high number of constraints**. 
+We tested our SVR model on both simple synthetic datasets (e.g., a noisy sine function) and large-scale real-world datasets. The synthetic data allowed us to verify the implementation's correctness, while the real data assessed its practical performance. The results demonstrate that while the solver generally works correctly, its speed significantly decreases when applied to large data volumes.
+
+The following sections will showcase results on benchmark functions (such as noisy sine waves), which demonstrate the SVR implementation's correctness, while the high-dimensional real-world datasets will be addressed in the final chapter.
 
 #### Synthetic data
 
@@ -80,30 +84,9 @@ We evaluated this SVR implementation on both synthetic datasets and the **Abalon
 
 \newpage
 
-#### Abalone
-
-- **MSE**: 4.2187
-
-![](./assets/fmincon_plot.jpg)
-
-\newpage
-
 ## (A1) Level Bundle Method Implementation
 
-Previously, we mathematically formulated the objective function and constraints of the **Level Bundle Method (LBM)** in a format compatible with `quadprog`. We now translate these formulations into code, ensuring a direct correspondence between the mathematical expressions and their implementation. Firstly we define the solver signature function as:
-
-```matlab
-alpha_opt = mp_solve(alpha_hat, bundle, f_level, C)
-```
-
-Where:
-
-* `alpha_hat` is the current $\alpha$ 
-* `bundle` is a structure containing:
-  * **bundle.alpha** $\to$  vector of dual variables $\alpha$
-  * **bundle.g** $\to$ vector of the subgradients
-  * **bundle.f** $\to$ vector of function evaluations
-* `f_level` is the current level
+Previously, we mathematically formulated the objective function and constraints of the **Level Bundle Method (LBM)** in a format compatible with `quadprog`. We now translate these formulations into code, ensuring a direct correspondence between the mathematical expressions and their implementation.
 
 ### Hessian Matrix and Linear Coefficients
 
@@ -115,8 +98,8 @@ $$
 In pseudo-code, this is implemented as:
 
 ```matlab
-H = blkdiag(eye(n), 0); % n = length(alpha_hat)
-f = [-alpha_hat; 0];
+H = BLOCK_DIAG(IDENTITY(n), 0) % the extra 0 is beacuse we have f_level
+f = CONCAT(-alpha_hat, 0)
 ```
 
 ### Inequality Constraints
@@ -126,11 +109,9 @@ $$
 A = \begin{bmatrix} \xi_k^\top & -1 \end{bmatrix}, \quad b = \langle \xi_k, \hat{\alpha_k} \rangle - f(\hat{\alpha_k})
 $$
 
-Translated into MATLAB:
-
 ```matlab
-A = [bundle.g' -ones(m, 1)]; % m = length(bundle.f)
-b = sum(bundle.g .* bundle.alpha, 1)' - bundle.f';
+A = CONCAT_COLUMNS(TRANSPOSE(bundle.g), -ONES(m, 1))
+b = SUM_ROWS(bundle.g * bundle.alpha) - bundle.f
 ```
 
 ### Equality Constraints
@@ -140,11 +121,9 @@ $$
 A_{\text{eq}} = \begin{bmatrix} \mathbf{1}^\top \end{bmatrix}, \quad b_{\text{eq}} = 0.
 $$
 
-MATLAB implementation:
-
 ```matlab
-Aeq = [ones(1, n) 0];
-beq = 0;
+Aeq = CONCAT(ONES(1, n), 0)
+beq = 0
 ```
 
 ### Variable Bounds
@@ -157,11 +136,9 @@ ub &= [C,\, f_{\text{level}}].
 \end{aligned}
 $$
 
-Implemented as:
-
 ```matlab
-lb = [-C * ones(n, 1); -inf];
-ub = [C * ones(n, 1); f_level];
+lb = CONCAT(-C * ONES(n, 1), -INF)
+ub = CONCAT( C * ONES(n, 1),  f_level)
 ```
 
 \newpage
@@ -171,33 +148,40 @@ ub = [C * ones(n, 1); f_level];
 Finally, we use `quadprog` to find the optimal solution. So the ending function is:
 
 ```matlab
-function alpha_opt = mp_solve(alpha_hat, bundle, f_level, C)
-    n = length(alpha_hat);
-    m = length(bundle.f);
+function mp_solve(alpha_hat, bundle, f_level, C):
+    Input:
+        alpha_hat   % current estimate of the solution (vector)
+        bundle      % set of past points, function values, and gradients
+        f_level     % current objective level (level bundle threshold)
+        C           % box constraint (‖alpha‖ <= C)
+    
+    Output:
+    	alpha_opt	% vector of alpha dual variables
 
-    H = blkdiag(eye(n), 0);
-    f = [-alpha_hat; 0];
+    n = LENGTH(alpha_hat)
+    m = LENGTH(bundle.f)
 
-    A = [bundle.g' -ones(m, 1)];
-    b = sum(bundle.g .* bundle.alpha, 1)' - bundle.f';
+    H = BLOCK_DIAG(IDENTITY(n), 0)
+    f = CONCAT(-alpha_hat, 0)
 
-    Aeq = [ones(1, n) 0];
-    beq = 0;
+    A = CONCAT_COLUMNS(TRANSPOSE(bundle.g), -ONES(m, 1))
+    b = SUM_ROWS(bundle.g * bundle.alpha) - bundle.f
 
-    lb = [-C * ones(n, 1); -inf];
-    ub = [C * ones(n, 1); f_level];
+    Aeq = CONCAT(ONES(1, n), 0)
+    beq = 0
 
-    options = optimoptions('quadprog','Display','off');
+    lb = CONCAT(-C * ONES(n, 1), -INF)
+    ub = CONCAT( C * ONES(n, 1),  f_level)
 
-    [sol, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
+    sol = SOLVE_QP(H, f, A, b, Aeq, beq, lb, ub)
 
-    if exitflag <= 0
-        warning("best solution not found, keeping prev...");
-        alpha_opt = alpha_hat;
+    if sol
+        alpha_opt = sol[1:n]
     else
-        alpha_opt = sol(1:n);
-    end
-end
+        WARN("Best solution not found, keeping previous...")
+        alpha_opt = alpha_hat
+
+    return alpha_opt
 ```
 
 
@@ -215,12 +199,10 @@ Input:
     max_iter    % maximum number of iterations
 
 % Initialization
-[f, g] = svr_dual_function(alpha)
+f, g = svr_dual_function(alpha)
 f_best = f
 
-bundle.alpha = alpha
-bundle.f = f
-bundle.g = g
+INIT_BUNDLE(bundle, alpha, f, g)
 
 for iter = 1 to max_iter:
     % Compute the acceptance level
@@ -230,7 +212,7 @@ for iter = 1 to max_iter:
     alpha_new = mp_solve(alpha, bundle, level, C)
 
     % Evaluate the function and subgradient at alpha_new
-    [f_new, g_new] = svr_dual_function(alpha_new, K, y, epsilon)
+    f_new, g_new = svr_dual_function(alpha_new, K, y, epsilon)
 
     % Check if the new point is acceptable
     if f_new < f_best:
@@ -241,9 +223,7 @@ for iter = 1 to max_iter:
         f = f_new
     
     % Update bundle
-    bundle.alpha = [bundle.alpha, alpha_new]
-    bundle.f = [bundle.f, f_new]
-    bundle.g = [bundle.g, g_new]
+    ADD_TO_BUNDLE(bundle, alpha_new, f_new, g_new)
 
     % Check for convergence
     if ||alpha_new - alpha|| < tol:
@@ -268,7 +248,7 @@ Below, we present the predictive performance on the sine function as a represent
 
 ### Training SVR with LBM on the Abalone Dataset
 
-As mentioned earlier, we used the Abalone dataset to evaluate the actual performance of our SVR implementation. This dataset contains 4177 samples with 8 features each, making it a perfect candidate as it introduces challenges such as:
+After validating the SVR's correctness, we evaluated its performance on complex real-world datasets like Abalone. This dataset contains 4177 samples with 8 features each, making it a perfect candidate as it introduces challenges such as:
 
 - A high number of constraints
 - Increased memory consumption
@@ -276,7 +256,7 @@ As mentioned earlier, we used the Abalone dataset to evaluate the actual perform
 
 #### High Number of Constraints
 
-The main issue encountered in the implementation of the **Level bundle method** in MATLAB is the uncontrolled growth of the bundle size at each iteration.
+The main issue encountered in the implementation of the **Level bundle method** is the uncontrolled growth of the bundle size at each iteration.
 
 Every cycle of the algorithm adds new constraints to the system, leading to an **exponential increase in the number of conditions** to be handled. This progressive expansion of the bundle has two critical effects:
 
@@ -286,10 +266,10 @@ Every cycle of the algorithm adds new constraints to the system, leading to an *
 To address this issue, we introduced the **bundle truncation** technique: once a certain threshold is exceeded, the oldest constraints are removed from the bundle, leaving only the most recent $k$ constraints. This significantly improved both memory efficiency and computational performance.
 
 ```matlab
-if size(bundle.alpha, 2) > max_constraints
-    bundle.alpha = bundle.alpha(:, 2:end);
-    bundle.f = bundle.f(2:end);
-    bundle.g = bundle.g(:, 2:end);
+if LENGTH(bundle.alpha) > max_constraints
+    REMOVE_FIRST_CONSTRAINT(bundle.alpha)
+    REMOVE_FIRST_CONSTRAINT(bundle.f)
+    REMOVE_FIRST_CONSTRAINT(bundle.g)
 end
 ```
 
@@ -300,17 +280,17 @@ Despite the introduction of bundle truncation, memory consumption remained signi
 To mitigate this issue, we decided to switch to **sparse matrices**, which drastically reduced memory usage, as only nonzero elements are stored. Additionally, this optimization ensured that the `quadprog` solver could terminate within a reasonable time frame. So the new `mp_solve` function can be written as:
 
 ```matlab
-H = blkdiag(speye(n), 0);
-f = sparse([-alpha_hat; 0]);
+H = SPARSE(BLOCK_DIAG(IDENTITY(n), 0))
+f = SPARSE(CONCAT(-alpha_hat, 0))
 
-A = sparse([bundle.g' -ones(m, 1)]);
-b = sparse(sum(bundle.g .* bundle.alpha, 1)' - bundle.f');
+A = SPARSE(CONCAT_COLUMNS(TRANSPOSE(bundle.g), -ONES(m, 1)))
+b = SPARSE(SUM_ROWS(bundle.g * bundle.alpha) - bundle.f)
 
-Aeq = sparse([ones(1, n) 0]);
-beq = 0;
+Aeq = SPARSE(CONCAT(ONES(1, n), 0))
+beq = 0
 
-lb = sparse([-C * ones(n, 1); -inf]);
-ub = sparse([C * ones(n, 1); f_level]);
+lb = SPARSE(CONCAT(-C * ONES(n, 1), -INF))
+ub = SPARSE(CONCAT( C * ONES(n, 1),  f_level))
 ```
 
 #### Performance Optimization: Convergency
@@ -337,6 +317,8 @@ Where:
 - $\eta$ is the learning rate
 - $\xi$ is the sungradient
 
+\newpage
+
 In pseudo-code:
 
 ```matlab
@@ -345,8 +327,8 @@ alpha = alpha + velocity;
 
 ---
 
-H = blkdiag(speye(n) * scale_factor, 0);
-f = sparse([-alpha_hat * scale_factor; 0]);
+H = SPARSE(BLOCK_DIAG(IDENTITY(n) * scale_factor, 0))
+f = SPARSE(CONCAT(-alpha_hat * scale_factor, 0))
 ```
 
 This implementation ensures that the method initially takes **large steps** and gradually slows down as it approaches the optimum, while still maintaining adequate step sizes. Unfortunately, this introduced two new hyperparameters (learning rate and momentum) which, if not appropriately selected, can cause the objective function to **diverge**.
