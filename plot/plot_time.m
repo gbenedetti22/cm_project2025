@@ -12,6 +12,6 @@ hold on;
 plot(common_time, bundle_interp, '-x', 'DisplayName', 'SVR with LBM', 'LineWidth', 1.5);
 xlabel('Time (s)');
 ylabel('Value');
-legend;
+legend('Location', 'best', 'FontSize', 16);
 grid on;
 end

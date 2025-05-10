@@ -8,8 +8,15 @@ switch lower(dataset)
         X = table2array(data(:, 1:end-1));
         Y = table2array(data(:, end));
 
-    case "wine"
+    case "red_wine"
         data = readtable(fullfile('data', 'winequality_red.data'),...
+                        'Delimiter', ';', 'FileType', 'text');
+        
+        X = table2array(data(:, 1:end-1));
+        Y = table2array(data(:, end));
+
+    case "white_wine"
+        data = readtable(fullfile('data', 'winequality-white.data'),...
                         'Delimiter', ';', 'FileType', 'text');
         
         X = table2array(data(:, 1:end-1));

@@ -46,25 +46,28 @@ classdef LBM < handle
 
             f_values = nan(max_iter, 1);
             f_times = nan(max_iter, 1);
+            gaps = nan(max_iter, 1);
             
             % h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
-            % tic
+            tic
             for iter = 1:max_iter
                 lb = obj.compute_lower_bound(bundle, C);
                 level = lb + obj.theta * (f_best - lb);
+                gap = abs(lb-f_best)/abs(f_best);
 
                 z_new = obj.mp_solve(z, bundle, level, C);
-                step = z_new - z;
                 z = z_new;
 
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, epsilon);
 
                 f_values(iter) = f_new;
                 f_times(iter) = toc;
-                % addpoints(h, iter, level);
+                gaps(iter)=gap;
+                % 
+                % addpoints(h, iter, gap);
                 % drawnow;
-                fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Step norm: %.6e\n', ...
-                    iter, f_new, norm(g_new), norm(step));
+                fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Relative gap: %.6e\n', ...
+                    iter, f_new, norm(g_new), gap);
                 
                 if f_new < f_best
                     f_best = f_new;
@@ -79,12 +82,18 @@ classdef LBM < handle
                 bundle.z = [bundle.z, z_new];
                 bundle.f = [bundle.f, f_new];
                 bundle.g = [bundle.g, g_new];
-
-                if norm(step) < obj.tol
+                
+                if gap < obj.tol
                     break;
                 end
 
             end
+            f_times = f_times(~isnan(f_times));
+
+            gaps = gaps(~isnan(gaps));
+            semilogy(1:length(gaps), gaps, '-', 'LineWidth', 2, 'DisplayName', 'Relative Gap');
+            xlabel('Iterations');
+            ylabel('Gap between lower and upper bound');
 
             alpha = z;
         end
