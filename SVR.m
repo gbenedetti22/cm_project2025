@@ -46,46 +46,20 @@ classdef SVR < handle
             validateattributes(obj.epsilon, {'numeric'}, {'positive'});
         end
 
-
-
-        function [x, f_values, f_times] = fit(obj, X, Y)
+        function [x, history] = fit(obj, X, Y)
             obj.X_train = X;
             K = obj.kernel_function.compute(X, X);
 
             if isa(obj.opt, 'LBM')
-                [x, f_values, f_times] = obj.opt.optimize(K, Y, obj.C, obj.max_iter, obj.epsilon);
+                [x, history] = obj.opt.optimize(K, Y, obj.C, obj.max_iter, obj.epsilon);
             else
-                n = length(Y);
-
-                svr_dual =  @(x) obj.svr_dual_function(x, K, Y, obj.epsilon);
-               
-                alpha0 = zeros(n, 1);
-
-                Aeq = ones(1, n);
-                beq = 0;
-
-                A = [];
-                b = [];
-
-                lb = -obj.C * ones(n, 1);
-                ub = obj.C * ones(n, 1);
-
-                outHandle = @(x, optimValues, state) obj.outfun(x, optimValues, state);
-
-                % 'PlotFcn', {@optimplotfval}, ...
-                options = optimoptions('fmincon', 'Display', 'iter', ...
-                    'SpecifyObjectiveGradient', true, 'MaxIterations', obj.max_iter, ...
-                    'OutputFcn', outHandle);
-
-                x = fmincon(svr_dual, alpha0, A, b, Aeq, beq, lb, ub, [], options);
-                f_values = obj.f_values;
-                f_times = obj.f_times;
+                [x, history] = Oracle().optimize(K, Y, obj.C, obj.max_iter, obj.epsilon);
             end
-            
+
             obj.alpha_svr = x;
-            
+
             sv_indices = find(abs(obj.alpha_svr) > obj.tol);
-            
+
             if isempty(sv_indices)
                 warning("Support vectors not found");
 
@@ -93,32 +67,18 @@ classdef SVR < handle
             else
                 obj.bias = mean(Y(sv_indices) - K(sv_indices, :) * obj.alpha_svr);
             end
-        end
 
-        function [f, g] = svr_dual_function(~, x, K, y, epsilon)
-            f = 0.5 * x' * (K * x) + epsilon * sum(abs(x)) - y' * x;
 
-            g = K * x + epsilon * sign(x) - y;
+            history.f_values = history.f_values';
+            history.f_values = history.f_values(~isnan(history.f_values));
+
+            history.f_times = history.f_times';
+            history.f_times = history.f_times(~isnan(history.f_times));
         end
 
         function y_pred = predict(obj, X)
             K_test = obj.kernel_function.compute(X, obj.X_train);
             y_pred = K_test * obj.alpha_svr + obj.bias;
-        end
-
-        function stop = outfun(obj, ~, optimValues, state)
-            if strcmp(state, 'init')
-                obj.f_values = [];
-                obj.f_times = [];
-                tic
-            end
-
-            if strcmp(state, 'iter')
-                obj.f_values = [obj.f_values; optimValues.fval];
-                obj.f_times = [obj.f_times; toc];
-            end
-
-            stop = false;
         end
 
     end

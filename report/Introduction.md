@@ -51,7 +51,7 @@ where $\tau$ is a small positive threshold to account for numerical precision. T
 The Level Bundle Method (LBM) is an optimization approach that refines solutions iteratively by leveraging cutting-plane techniques and a level constraint. It is particularly useful in non-differentiable optimization problems, such as those encountered in support vector regression.
 
 
-## Reformulating the Problem for `quadprog` in MATLAB
+## Problem Formulation
 
 Since the SVR function defined before is **non-differentiable**, we apply the **Level Bundle Method** to approximate it iteratively. Especially we find a new solution by solving the LBM objective function defined as follow:
 
@@ -114,7 +114,7 @@ $$
 \frac{1}{2} \alpha^\top \alpha - \hat{\alpha}_k^\top \alpha.
 $$
 
-### Reformulation into `quadprog` Format
+## Reformulation into `quadprog` format
 
 By comparing this expression with the standard objective function solved by `quadprog`:
 $$
@@ -131,7 +131,7 @@ $$
 $$
 That is exactly the function that we want to minimize.
 
-## Constraints
+### Constraints
 
 The Level Bundle Method algorithm is subject to the following constraints:
 $$
@@ -167,12 +167,38 @@ $$
 A = \begin{bmatrix} \xi_k^\top & -1 \end{bmatrix}, \quad b = \langle \xi_k, \hat{\alpha_k} \rangle - f(\hat{\alpha_k})
 $$
 
-Note that the current level $f_k^\text{level}$ is updated at each iteration using the following formula:
+### Lower Bound Estimation in the Level Bundle Method
+
+In the classical Level Bundle Method, at each iteration a convex overestimator of the dual function is constructed using subgradients. This overestimator can then be used to compute a lower bound on the dual function. Such a lower bound is valuable for guiding the choice of the level parameter, helping the algorithm converge more efficiently toward the optimal solution. Given the constraint function:
+
 $$
-\begin{aligned}
-f_{\text{level}} = \theta f + (1 - \theta) f_{\text{best}}
-\end{aligned}
+\hat{f}_k(\alpha) = \max_{i \in B_k} \{ f(z_i) + \langle \xi_i, \alpha - z_i \rangle \}
 $$
+
+This piecewise-linear and convex function overestimates the true dual objective function, and can be used to compute a global lower bound:
+
+$$
+f_{\text{lower}} = \min_{\alpha \in X} \hat{f}_k(\alpha)
+$$
+
+To compute this lower bound in practice, we solve the following convex optimization problem by introducing an auxiliary scalar variable $t$:
+
+$$
+\begin{array}{ll}
+\min_{\alpha, t} & t \\
+\text{s.t.} & f(z_i) + \langle \xi_i, \alpha - z_i \rangle \leq t, \quad \forall i \in B_k \\
+& \sum_{i=1}^n \alpha_i = 0 \\
+& - C \leq \alpha_i \leq C, \quad \forall i = 1, \ldots, n
+\end{array}
+$$
+
+Then we can evaluate the level by using:
+$$
+f^{\text{level}} = f_{\text{lower}} + \theta * (f_{\text{upper}} - f_{\text{lower}})
+$$
+Where $f_{\text{upper}}$ is the current best solution found at iteration $k$.
+
+**Can the lower bound diverge to infinity?** No, because the dual objective function is convex and continuous, and the optimization is carried out over a feasible region defined by box constraints (which impose $-C ≤ α_i ≤ C$) and the sum-to-zero constraint.
 
 ### Equality Constraint
 
@@ -201,6 +227,20 @@ lb &= [-C,\, -\infty], \\
 ub &= [C,\, f_{\text{level}}].
 \end{aligned}
 $$
+
+### Does the Level Bundle Method Converge?
+
+The introduction of the absolute value in the objective function, while introducing non-differentiability, does not compromise the convexity of the function, since the absolute value is itself a convex function. As a result, the dual problem, when viewed as a minimization problem, remains convex: this ensures that **any local minimum found is also a global minimum**.
+
+**The expected efficiency** of the method is sub-linear ($O(\frac{1}{k})$ with $k$ = number of iterations), which is typical for non-smooth optimization algorithms. 
+
+Finally **the method converges** if and only if, in most iterations, the condition:
+$$
+\hat{f}_k(\alpha_{k+1}) \geq f(\alpha_{\text{best}})
+$$
+is satisfied cause this ensures that the solution progressively approaches to the true optimum. This is achieved by solving the quadratic problem (Master Problem) defined previously, that constructs a global over-estimator of the objective function.
+
+Additionally, the careful selection of the $f^{\text{level}}$ parameter prevents the algorithm from diverging beyond the optimal solution.
 
 ## General Notes and Considerations
 

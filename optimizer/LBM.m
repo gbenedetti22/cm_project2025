@@ -3,9 +3,6 @@ classdef LBM < handle
         tol
         theta
         max_constraints
-        lr
-        momentum
-        scale_factor
     end
     
     methods
@@ -17,9 +14,6 @@ classdef LBM < handle
             default_params = struct(...
                 'tol', 1e-6,...
                 'theta', 0.5,...
-                'lr', 1e-6,...
-                'momentum', 0.6,...
-                'scale_factor', 1e-8,...
                 'max_constraints', inf....
             );
 
@@ -34,37 +28,39 @@ classdef LBM < handle
             end
         end
         
-        function [alpha, f_values, f_times] = optimize(obj, K, y, C, max_iter, epsilon)
+        function [alpha, history] = optimize(obj, K, y, C, max_iter, epsilon)
             n = length(y);
             z = zeros(n, 1);
             [f, g] = obj.svr_dual_function(z, K, y, epsilon);
             f_best = f;
+            history = OptHistory(max_iter);
 
             bundle.z = z;
             bundle.f = f;
             bundle.g = g;
 
-            f_values = nan(max_iter, 1);
-            f_times = nan(max_iter, 1);
+            gaps = nan(max_iter, 1);
             
             % h = animatedline('LineStyle','-', 'Marker','none', 'LineWidth', 2);
-            % tic
+            tic
             for iter = 1:max_iter
                 lb = obj.compute_lower_bound(bundle, C);
                 level = lb + obj.theta * (f_best - lb);
+                gap = abs(lb-f_best)/abs(f_best);
 
                 z_new = obj.mp_solve(z, bundle, level, C);
-                step = z_new - z;
                 z = z_new;
 
                 [f_new, g_new] = obj.svr_dual_function(z_new, K, y, epsilon);
 
-                f_values(iter) = f_new;
-                f_times(iter) = toc;
-                % addpoints(h, iter, level);
+                history.f_values(iter) = f_new;
+                history.f_times(iter) = toc;
+                gaps(iter)=gap;
+                % 
+                % addpoints(h, iter, gap);
                 % drawnow;
-                fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Step norm: %.6e\n', ...
-                    iter, f_new, norm(g_new), norm(step));
+                fprintf('Iter: %d | f(x): %.6f | Grad norm: %.6e | Relative gap: %.6e\n', ...
+                    iter, f_new, norm(g_new), gap);
                 
                 if f_new < f_best
                     f_best = f_new;
@@ -79,12 +75,18 @@ classdef LBM < handle
                 bundle.z = [bundle.z, z_new];
                 bundle.f = [bundle.f, f_new];
                 bundle.g = [bundle.g, g_new];
-
-                if norm(step) < obj.tol
+                
+                if gap < obj.tol
                     break;
                 end
 
             end
+            % f_times = f_times(~isnan(f_times));
+            % 
+            % gaps = gaps(~isnan(gaps));
+            % semilogy(1:length(gaps), gaps, '-', 'LineWidth', 2, 'DisplayName', 'Relative Gap');
+            % xlabel('Iterations');
+            % ylabel('Gap between lower and upper bound');
 
             alpha = z;
         end
@@ -136,7 +138,7 @@ classdef LBM < handle
             lb = sparse([-C * ones(n, 1); -inf]);
             ub = sparse([C * ones(n, 1); f_level]);
 
-            options = optimoptions('quadprog', 'Display', 'off');
+            options = mskoptimset('Display', 'off');
 
             [sol, ~, exitflag] = quadprog(H, f, A, b, Aeq, beq, lb, ub, [], options);
 

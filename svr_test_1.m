@@ -31,8 +31,8 @@ disp("MSE (LBM): " + mse(y_pred, y));
 % plot_gap(x, f_values, x_lbm, f_values_lbm);
 % plot_time(f_values, f_times, f_values_lbm, f_times_lbm);
 
-figure; hold on;
-plot(X, y, '-', 'LineWidth', 1, 'DisplayName', 'Training data');
-plot(X, y_pred, 'r-', 'LineWidth', 2, 'DisplayName', 'SVR Predictions');
-xlabel('X'); ylabel('y'); title('SVR (with RBF Kernel) using LBM', 'FontSize', 22);
-legend('FontSize', 18); grid on;
+% figure; hold on;
+% plot(X, y, '-', 'LineWidth', 1, 'DisplayName', 'Training data');
+% plot(X, y_pred, 'r-', 'LineWidth', 2, 'DisplayName', 'SVR Predictions');
+% xlabel('X'); ylabel('y'); title('SVR (with RBF Kernel) using LBM', 'FontSize', 22);
+% legend('FontSize', 18); grid on;

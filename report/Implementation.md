@@ -187,7 +187,55 @@ function mp_solve(alpha_hat, bundle, f_level, C):
 
 \newpage
 
-## **LBM Algorithm: Pseudo-code Implementation**
+## Lower bound estimation for Level
+
+Given the following optimization problem
+$$
+\begin{array}{ll}
+\min_{\alpha, t} & t \\
+\text{s.t.} & f(z_i) + \langle \xi_i, \alpha - z_i \rangle \leq t, \quad \forall i \in B_k \\
+& \sum_{i=1}^n \alpha_i = 0 \\
+& - C \leq \alpha_i \leq C, \quad \forall i = 1, \ldots, n
+\end{array}
+$$
+The corrisponding pseudo-code can be:
+
+```matlab
+function compute_lower_bound(bundle, C)
+    % Input:
+    %   bundle: structure containing fields alpha, g, f
+    %   C: bounding parameter for variables
+    % Output:
+    %   lb: computed lower bound
+
+    [n, m] = SIZE(bundle.alpha)  % n = rows, m = columns
+
+    % Build inequality constraints
+    A = [TRANSPOSE(bundle.g), -ONES(m, 1)]
+    b = SUM(bundle.g .* bundle.z, 1)' - TRANSPOSE(bundle.f)
+
+    % Define linear program
+    objective = [ZEROS(n, 1); 1]
+    A_eq = [ONES(1, n), 0]
+    b_eq = 0
+    lower_bounds = [-C * ONES(n, 1); -inf]
+    upper_bounds = [ C * ONES(n, 1);  inf]
+
+    % Solve linear program
+    [~, lb, status] = SOLVE_LP(objective, A, b, A_eq, b_eq, lower_bounds, upper_bounds)
+
+    return lb
+```
+
+Then we can compute the level with:
+
+```
+level = lb + theta * (f_best - lb)
+```
+
+\newpage
+
+## LBM Algorithm: Pseudo-code Implementation
 
 ```matlab
 Input:
@@ -205,8 +253,11 @@ f_best = f
 INIT_BUNDLE(bundle, alpha, f, g)
 
 for iter = 1 to max_iter:
+	% Compute the lower bound
+	lb = compute_lowerbound(bundle, C)
+	
     % Compute the acceptance level
-    level = theta * f + (1 - theta) * f_best
+    level = lb + theta * (f_best - lb)
 
     % Solve the master problem to get the new point
     alpha_new = mp_solve(alpha, bundle, level, C)
@@ -231,8 +282,6 @@ for iter = 1 to max_iter:
 
 return alpha  % Return the optimal solution
 ```
-
----
 
 # Performance Evaluation
 
@@ -292,46 +341,6 @@ beq = 0
 lb = SPARSE(CONCAT(-C * ONES(n, 1), -INF))
 ub = SPARSE(CONCAT( C * ONES(n, 1),  f_level))
 ```
-
-#### Performance Optimization: Convergency
-
-At this stage, our SVR implementation using the Level Bundle Method (LBM) successfully completes in reasonable time and achieves an **MSE** of **4.3729**, which is very close to the Oracle's performance, thanks to the optimizations implemented thus far. However, the convergence <u>remains relatively slow</u>, requiring more than **200 iterations**, unlike the Oracle which approaches the minimum after approximately **40 iterations**.
-
-This phenomenon is primarily due to the step sizes the algorithm takes: while the Oracle maintains an average step size of approximately 98, our algorithm averages only 1e-1. This limitation is largely attributable to the **matrix H** and the **linear term** that inherently penalize larger steps, thereby slowing convergence.
-
-To address this issue, we introduced a new hyperparameter called "*scale_factor*" that modifies our objective function:
-$$
-\frac{1}{2} \cdot \text{scale\_factor} \cdot \alpha^T\alpha - \text{scale\_factor} \cdot \alpha_k^T\alpha
-$$
-This scaling essentially **reduces the quadratic penalty** while proportionally adjusting the linear term, effectively increasing the **trust region** and consequently allowing larger steps. This modification enabled us to increase average step sizes from *1e-1* to approximately *87*, resulting in an improved **MSE** of **4.2569**, which is comparable to our **Oracle's performance (4.2191).**
-
-Nevertheless, despite the scaling factor, the algorithm still tends to decelerate significantly as it approaches the minimum value. In fact, to achieve that MSE value, we needed to further increase the number of iterations (approximately **120-150**). To overcome this limitation, we introduced **momentum** with **learning rate** applied to the alpha variables:
-$$
-v_\text{k+1} = \beta  v_k - \eta \cdot \xi_k \\
-\alpha_\text{k+1} = \alpha_k + v_\text{k+1}
-$$
-Where:
-
-- $\beta$ is the momentum factor
-- $v_k$ is the velocity
-- $\eta$ is the learning rate
-- $\xi$ is the sungradient
-
-\newpage
-
-In pseudo-code:
-
-```matlab
-velocity = momentum * velocity - learning_rate * g;
-alpha = alpha + velocity;
-
----
-
-H = SPARSE(BLOCK_DIAG(IDENTITY(n) * scale_factor, 0))
-f = SPARSE(CONCAT(-alpha_hat * scale_factor, 0))
-```
-
-This implementation ensures that the method initially takes **large steps** and gradually slows down as it approaches the optimum, while still maintaining adequate step sizes. Unfortunately, this introduced two new hyperparameters (learning rate and momentum) which, if not appropriately selected, can cause the objective function to **diverge**.
 
 #### Choosing the Solver: Is Quadprog Really the Best Option?
 
