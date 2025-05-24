@@ -8,9 +8,9 @@ dataset = "airfoil";
 X = zscore(X);
 
 % Load optimal parameters
-[sigma, epsilon, lbm_params, svr_params] = get_params(dataset);
-svr = SVR(rmfield(svr_params, 'opt'));
-svr_lbm = SVR(svr_params);
+[svr_params_lbm, svr_params_oracle] = get_params(dataset);
+svr = SVR(svr_params_oracle);
+svr_lbm = SVR(svr_params_lbm);
 
 % Fit the training data
 [x, h] = svr.fit(X, y);
