@@ -1,3 +1,5 @@
+% callback passed to MOSEK (Oracle) for storing debugging values
+
 function [stop] = oracle_callback(handle, where, info)
     stop = 0;
 

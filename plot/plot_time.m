@@ -1,3 +1,9 @@
+% Utility function for comparing Oracle and LBM in a time-based context.
+% Specifically, the plot shows what happens at the same time *t*, making it
+% useful for observing the function values at a specific moment
+
+% If times are different, interpolation is used for aligning
+
 function plot_time(f_values_oracle, f_time_oracle, f_values_bundle, f_time_bundle)
 n = max(length(f_time_oracle), length(f_time_bundle));
 
@@ -12,6 +18,7 @@ hold on;
 plot(common_time, bundle_interp, '-x', 'DisplayName', 'SVR with LBM', 'LineWidth', 1.5);
 xlabel('Time (s)');
 ylabel('Value');
+title('Objective function values based on time', 'FontSize', 18);
 legend;
 grid on;
 end

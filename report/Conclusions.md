@@ -1,20 +1,11 @@
 \newpage
 # Conclusions: Achieved Results
 
-In this chapter, we present the results obtained on various datasets, comparing the SVR with Level Bundle Method (LBM) against a classical SVR implementation, referred to as the *Oracle*. The hyperparameters used in each experiment are reported, and efforts were made to keep them as similar as possible to ensure a fair comparison.
+This chapter presents a comparative analysis between an SVR using the Level Bundle Method (LBM) and a classical SVR implementation, referred to as the *Oracle*. Experiments were conducted across diverse datasets, with similar hyperparameters to ensure fairness. The goal is to evaluate under which conditions Level Bundle Method (LBM), achieves solution quality and computational performance comparable to the Oracle.
 
-As stated in the introductory chapter, the goal of this project is **not** to achieve the best possible MSE through extensive hyperparameter tuning. Instead, the objective is to demonstrate that the Level Bundle Method can deliver **comparable—if not superior—performance** to that of a classical SVR.
+Oracle solution validity was verified using MOSEK logs, focusing on solution status (e.g., OPTIMAL, NEAR_OPTIMAL or UNKNOWN) and the duality gap (considered reliable if below 1e-4). 
 
-**For each dataset, two plots will be displayed:**
-
-1. **Relative Gap Plot**: This shows the relative gap between the oracle and the SVR with LBM (Level Bundle Method), calculated using the formula:
-   $$
-   \text{rg} = \frac{|f_k - f^*|}{|f^*|}  
-   $$
-   
-2. **Function Value Plot**: This displays the function value at the same time *t*.
-
-Since the two models have different training times, an interpolation between their respective data points was performed using MATLAB’s `interp1` function to align their results for comparison.
+<u>In general, we consider the comparison as a win if the relative gap, between Oracle and SVR with Level Bundle Method (LBM), is less than 1e-4.</u>
 
 ## Introduction
 
@@ -31,7 +22,7 @@ The parameters for the Level Bundle Method used are:
 
 - **tol**
 
-  Tolerance for stopping criterion.
+  Tolerance for stopping criterion, indicating the distance between the lower and upper bound of the Level Bundle Method.
 
 - **theta**
 
@@ -41,6 +32,19 @@ The parameters for the Level Bundle Method used are:
 
   Maximum number of cutting planes (constraints) maintained in the bundle.
 
+
+
+Each dataset is analyzed individually, reporting the parameters used for both the Oracle and Level Bundle Method (LBM), and presenting two key plots:
+
+- **Relative Gap Plot**:
+  - *Y-axis*: Relative gap between Oracle and LBM (logarithmic scale)
+  - *X-axis*: Normalized number of iterations
+  - *Purpose*: To assess how closely the LBM-based SVR approaches the Oracle’s solution at each normalized iteration.
+- **Convergence Plot**:
+  - *Y-axis*: Objective values
+  - *X-axis*: Time in seconds
+  - *Purpose*: To evaluate how quickly the LBM-based SVR progresses toward the Oracle’s solution over time (function evaluation at time $t$)
+
 \newpage
 
 ## Abalone
@@ -49,40 +53,54 @@ The parameters for the Level Bundle Method used are:
 | :-------- | -------------- |
 | Kernel    | RBF(sigma=0.4) |
 | C         | 1              |
-| Epsilon   | 0.1           |
+| Epsilon   | 1e-6        |
 
 ### Oracle
-| Iterations | MSE    | Time (s) |
-| ---------- | ------ | -------- |
-| 60         | 4.1976 | 334.2511 |
+| Iterations | MSE    | Min        | Time (s) |
+| ---------- | ------ | ---------- | -------- |
+| 14         | 4.2092 | -6087.4994 | 27.4832  |
 
+```toml
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -6.0874994035e+03   nrm: 1e+00    Viol.  con: 6e-09    var: 0e+00  
+  Dual.    obj: -6.0874994815e+03   nrm: 2e+01    Viol.  con: 0e+00    var: 8e-06   
+  Gap primal-dual: 1.2813e-08
+```
 ### SVR with Level Bundle Method (LBM)
 
-- **tol**: `1e-2` 
+- **tol**: `2e-5` 
 - **theta**: `0.6`   
-- **max_constraints**: `60` 
+- **max_constraints**: `100` 
 
-| Iterations | MSE    | Time (s) |
-| ---------- | ------ | -------- |
-| 60         | 4.1966 | 148.3282 |
+| Iterations | MSE    | Min        | Time (s) |
+| ---------- | ------ | ---------- | -------- |
+| 86         | 4.2122 | -6087.4778 | 34.6167  |
+
+#### Relative Gap
+
+| Lower-Upper Bound | Oracle-LBM (Minimum) |
+| ---------------------	| -------------- |
+| 1.973186e-05 | 3.5475e-06 |
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\textwidth]{./assets/abalone_gap.jpg}
 \end{figure}
 
-The plot highlights a clear divergence in the early stages of the iterations. During the first 5–10 iterations, the relative gap for the Oracle exhibits a steep increase indicating a fast convergence to a near-optimal state in a few steps.
+The plot shows a clear decreasing trend in the relative gap between the Oracle and LBM methods across normalized iterations. Although LBM requires a significantly higher number of iterations (86) compared to the Oracle (14), the normalized view allows for a direct comparison of their progression.
 
-In contrast, the Level Bundle Method (LBM) begins with a noticeably higher relative gap and shows a more gradual increase over the initial iterations, characterized by smaller steps. Over the subsequent 15–20 iterations, the performance of both methods starts to align in terms of the magnitude of the relative gap and the step length of its decrease. Eventually, both algorithms reach a plateau where further reductions in the relative gap become minimal, suggesting they have both converged closely to their respective optimal function value, with no further noticeable differences in their convergence behavior.
+The gap reduces steadily overall, with a noticeable drop in the middle and final stages. Interestingly, there is a brief increase in the gap before the final convergence, indicating a temporary divergence before the LBM method ultimately reaches the minimum.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\textwidth]{./assets/abalone_time.jpg}
 \end{figure}
 
-Observing the temporal performance within the first 50 seconds, the SVR with LBM achieves a considerably faster value reduction compared to the Oracle. 
+Observing the performance over time, it is evident that the LBM method exhibits a much steeper initial decrease in the objective value compared to the Oracle. However, after reaching a plateau, it requires more iterations to converge fully to the minimum.
 
-The LBM reaches the value of approximately -5000 in about 10 seconds, whereas the Oracle takes around 50 seconds to reach a similar level. Around the 60-second mark, both methods attain comparable values, after which the LBM continues to exhibit a slight advantage. This faster convergence of the LBM confirms the approximate 50% speedup it provides on this high-dimensional problem.
+The Oracle, on the other hand, reaches the minimum slightly faster in terms of total runtime (27.5 seconds versus 34.6 seconds for LBM). Nevertheless, the difference in runtime is relatively small, and the additional overhead of preserving bundle information appears to have limited impact on performance in this dataset, which is characterized by a large number of inputs and features.
 
 \newpage
 
@@ -90,81 +108,111 @@ The LBM reaches the value of approximately -5000 in about 10 seconds, whereas th
 
 | Parameter | Value          |
 | :-------- | -------------- |
-| Kernel    | RBF(sigma=0.5) |
+| Kernel    | RBF(sigma=0.6) |
 | C         | 1              |
-| Epsilon   | 0.01           |
+| Epsilon   | 1e-6           |
 
 ### Oracle
-| Iterations | MSE     | Time (s) |
-| ---------- | ------- | -------- |
-| 60         | 0.06494 | 438.608  |
+| Iterations | MSE      | Min | Time (s)  |
+| ---------- | -------- | --------- | --------- |
+| 12        | 0.068958 | -1257.6789 | 28.9418 |
+
+```toml
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -1.2576789125e+03   nrm: 1e+00    Viol.  con: 1e-10    var: 0e+00  
+  Dual.    obj: -1.2576789122e+03   nrm: 6e+00    Viol.  con: 0e+00    var: 2e-07  
+  Gap primal-dual: 2.3853e-10
+```
+
+
 
 ### SVR with Level Bundle Method (LBM)
 
-- **tol**: `1e-2` 
-- **theta**: `0.8`   
-- **max_constraints**: `60` 
+- **tol**: `2e-5` 
+- **theta**: `0.7`   
+- **max_constraints**: `100` 
 
-| Iterations | MSE      | Time (s) |
-| ---------- | ------   | -------- |
-| 60         | 0.064731 | 268.0662 |
+| Iterations | MSE      | Min   | Time (s)  |
+| ---------- | -------- | --------- | --------- |
+| 114     | 0.068975 | -1257.6693 | 63.3961 |
+
+#### Relative Gap
+
+| Lower-Upper Bound | Oracle-LBM (Minimum) |
+| ---------------------	| -------------- |
+| 1.946468e-05 | 6.8581e-06 |
+
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\textwidth]{./assets/white_wine_gap.jpg}
 \end{figure}
 
-From the realtive gap plot we observe no significant differences between the two SVR models: after few initial step (where the Oracle has a steeper increase as noticed also in Abalone results) both exhibit excellent and comparable results, evidenced by the small MSE and identical convergence steps after eleventh iteration.
+The convergence of both methods over the iterations shows that they reach a plateau in the final stages, indicating a more stable — though still overall decreasing — trend toward the minimum, with progressively smaller differences in the obtained results.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\textwidth]{./assets/white_wine_time.jpg}
 \end{figure}
 
-Consistent with the findings on the Abalone dataset, the Oracle exhibits a significantly slower processing time, particularly noticeable within the first minute where a substantial temporal gap exists.
+As observed in the Abalone dataset, the Oracle exhibits a less steep decrease in terms of both runtime and objective value. However, the difference between the two methods is significant, with LBM showing approximately a 50% increase in runtime — from 28.9 to 63.4 seconds. 
 
-However, beyond this initial period, thanks to the initially larger Oracle's steps size, the difference diminishes considerably, and the two methods proceed with similar steps within comparable timeframes. Despite this initial and substantial temporal lag, which contributes to an overall runtime for the Oracle exceeding that of the LBM by over 200 seconds, the final convergence in performance remains comparable between the two approaches.
+
 
 \newpage
 
 ## Red Wine
 
-| Parameter | Value          |
-| :-------- | -------------- |
-| Kernel    | RBF(sigma=0.5) |
-| C         | 1              |
-| Epsilon   | 0.01           |
+| Parameter | Value           |
+| :-------- | --------------- |
+| Kernel    | RBF(sigma=0.55) |
+| C         | 1               |
+| Epsilon   | 1e-6            |
 
 ### Oracle
-| Iterations | MSE    | Time (s) |
-| ---------- | ------ | -------- |
-| 60         | 0.05532 | 29.7456 |
+| Iterations | MSE      | Min | Time (s)  |
+| ---------- | -------- | --------- | --------- |
+| 12     | 0.056638 | -380.0152 | 2.6541 |
 
+```toml
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -3.8001520940e+02   nrm: 1e+00    Viol.  con: 6e-11    var: 0e+00  
+  Dual.    obj: -3.8001514184e+02   nrm: 6e+00    Viol.  con: 0e+00    var: 3e-05  
+  Gap primal-dual: 1.7778e-07
+```
 ### SVR with Level Bundle Method (LBM)
 
-- **tol**: `1e-2` 
-- **theta**: `0.6`   
-- **max_constraints**: `60` 
+- **tol**: `1e-6` 
+- **theta**: `0.7`   
+- **max_constraints**: `100` 
 
-| Iterations | MSE    | Time (s) |
-| ---------- | ------ | -------- |
-| 60         | 0.055118 | 43.705 |
+| Iterations | MSE    | Min | Time (s) |
+| ---------- | ------ | -------- | -------- |
+| 170  | 0.056647 | -380.0144 | 61.7583 |
+
+#### Relative Gap
+
+| Lower-Upper Bound | Oracle-LBM (Minimum) |
+| ---------------------	| -------------- |
+| 9.820069e-07 | 2.1485e-06 |
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\textwidth]{./assets/wine_gap.jpg}
 \end{figure}
 
-Similar to the White Wine dataset, both SVR models exhibit comparable and excellent convergence, as evidenced by the minimal relative gap difference observed after the Oracle method's initial iteration.
+Similar to the White Wine dataset, both methods reach a plateau in the final stages, reducing the relative gap between the minimum values achieved. Notably, in this case, the number of iterations is significantly higher: the Oracle converges within just 12 iterations, while the LBM requires 170 iterations to reach comparable results.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=1\textwidth]{./assets/wine_time.jpg}
 \end{figure}
 
-Analyzing the time-based performance reveals a negligible difference between the two methods. Comparing the plot with the total runtime results, it's noticeable that in this case, the computational simplicity of the Oracle might be favored over the LBM approach, demonstrating an approximate 30% performance advantage for the Oracle in terms of overall computation time.
-
-
+In terms of time-based performance, a significant difference is observed. Although LBM exhibits a faster initial phase (consistent with prior studies), its total computation time (61.8 seconds) is significantly higher compared to the Oracle (2.6 seconds). This discrepancy is attributed to LBM's larger number of iterations and the overhead of bundle storage.
 
 \newpage
 
@@ -174,57 +222,92 @@ Analyzing the time-based performance reveals a negligible difference between the
 | :-------- | -------------- |
 | Kernel    | RBF(sigma=0.7) |
 | C         | 1              |
-| Epsilon   | 0.01           |
+| Epsilon   | 1e-7           |
 
 ### Oracle
-| Iterations | MSE    | Time (s) |
-| ---------- | ------ | -------- |
-| 60         | 10.2377 | 46.8911 |
 
+| Iterations | MSE      | Min | Time (s)  |
+| ---------- | -------- | --------- | --------- |
+| 13       | 10.24 | -4635.7585 | 1.6597 |
+
+```toml
+Interior-point solution summary
+  Problem status  : PRIMAL_AND_DUAL_FEASIBLE
+  Solution status : OPTIMAL
+  Primal.  obj: -4.6357585385e+03   nrm: 1e+00    Viol.  con: 1e-10    var: 1e-07  
+  Dual.    obj: -4.6357585894e+03   nrm: 1e+02    Viol.  con: 0e+00    var: 8e-06
+  Gap primal-dual: 1.0980e-08
+```
 ### SVR with Level Bundle Method (LBM)
 
-- **tol**: `1e-2` 
-- **theta**: `0.7`   
-- **max_constraints**: `60` 
+- **tol**: `1e-6` 
+- **theta**: `0.6`   
+- **max_constraints**: `100` 
 
-| Iterations | MSE    | Time (s) |
-| ---------- | ------ | -------- |
-| 60         | 10.2376 | 43.7915 |
+| Iterations | MSE      | Min | Time (s)  |
+| ---------- | -------- | --------- | --------- |
+| 88     | 10.241 | -4635.7580 | 14.6318 |
 
+#### Relative Gap
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=1\textwidth]{./assets/airfoil_gap1.jpg}
-\end{figure}
-
-Similar to previous dataset observations, a noticeable difference in the relative gap between the two methods is apparent in the initial 10 iterations, with their performance tending to align from approximately 15 to 20 iterations. The Oracle exhibits an initial increase in the relative gap magnitude within the first few steps before rapidly converging towards the LBM's result, eventually reaching a plateau indicative of optimal convergence.
+| Lower-Upper Bound | Oracle-LBM (Minimum) |
+| ---------------------	| -------------- |
+| 9.674982e-07 | 1.1165e-07 |
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=1\textwidth]{./assets/airfoil_time1.jpg}
+\includegraphics[width=1\textwidth]{./assets/airfoil_gap.jpg}
 \end{figure}
 
-In terms of computational time, the Oracle, thanks to its noticeably larger initial steps in function evaluation, reaches a similar function value as the LBM after roughly 10 seconds, resulting in virtually indistinguishable outputs thereafter. However, this initial temporal lag contributes to an overall performance difference, with the Oracle taking approximately 6% (3 seconds) longer to converge fully compared to the LBM.
+For the airfoil dataset, the relative gap plot highlights a more consistent descent, reaching a minimal gap between the models and yielding the best overall result compared to the other datasets in the final stages. The disparity in the number of iterations is still notable, with the oracle converging using only about 1/8 the iterations.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{./assets/airfoil_time.jpg}
+\end{figure}
+
+In terms of time, the overall behavior shown in this graph is consistent with previous findings; however, on this dataset, LBM exhibits a less steep initial decrease, which can be attributed to the algorithm taking larger steps in the early phase. The time difference is also less significant than for the Redwine dataset (which is the most similar case among those studied), with the oracle requiring 1.7 seconds compared to LBM, which takes only an additional 12 seconds.
+
+## Sublinear Convergence
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{./assets/abalone_conv.jpg}
+\end{figure}
+
+As discussed in the theoretical section of the report, the algorithm is expected to exhibit sublinear convergence. This behavior is clearly reflected in the graph, where the gradual reduction in the gap over many iterations results in the characteristic curvature typical of sublinear convergence patterns.
 
 \newpage
 
 ## Summary
 
-| Dataset     | Model     | Iterations | MSE      | Time (s) |
-| ----------- | --------- | ---------- | -------- | -------- |
-| Abalone     | Oracle    | 60         | 4.1976   | 334.2511 |
-| Abalone     | LBM (SVR) | 60         | 4.1966   | 148.3282 |
-| White Whine | Oracle    | 60         | 0.064935 | 438.608  |
-| White Whine | LBM (SVR) | 60         | 0.064731 | 268.0662 |
-| Red Whine   | Oracle    | 60         | 0.05532  | 29.7456  |
-| Red Whine   | LBM (SVR) | 60         | 0.055118 | 43.705   |
-| Airfoil     | Oracle    | 60         | 10.2345  | 46.8911  |
-| Airfoil     | LBM (SVR) | 60         | 10.2336  | 43.7915  |
+| Dataset     | Model | Iterations | MSE      | Min   | Time (s) |
+| ----------- | --------- | ---------- | -------- | --------- | --------- |
+| Abalone     | Oracle    | 14         | 4.2092   | -6087.499  | 27.4832   |
+| Abalone     | LBM | 86         | 4.2122   | -6087.477  | 34.6167   |
+| White Wine | Oracle    | 12         | 0.068958 | -1257.678  | 28.9418   |
+| White Wine | LBM | 114        | 0.06897 | -1257.669  | 63.3961   |
+| Red Wine   | Oracle    | 12         | 0.056638 | -380.0152   | 2.6541    |
+| Red Wine   | LBM | 170        | 0.056647 | -380.0144   | 61.7583   |
+| Airfoil     | Oracle    | 13         | 10.24    | -4635.758  | 1.6597    |
+| Airfoil     | LBM | 88         | 10.241   | --4635.7580 | 14.6318   |
 
-Across all datasets, the Level Bundle Method (LBM) with Support Vector Regression (SVR) generally achieves a marginally lower MSE compared to the Oracle approach. However, the computational time efficiency of the two methods varies depending on the dataset size and complexity.
+#### Relative Gap
 
-For large, high-dimensional datasets such as Abalone and White Wine, the Oracle requires substantially more time to converge, with differences reaching up to 50%, likely due to its more exhaustive evaluation of candidate solutions. In these scenarios, LBM (SVR) significantly reduces the runtime by approximately 45–50% while still delivering a slightly better MSE.
+| Dataset    | Lower-Upper Bound | Oracle-LBM |
+| ---------- | -------------  | -------- |
+| Abalone    | 1.973186e-05          | 3.5475e-06                     |
+| White Wine | 1.946468e-05          | 6.8581e-06                     |
+| Red Wine   | 9.820069e-07          | 2.1485e-06                     |
+| Airfoil    | 9.674982e-07          | 1.1165e-07                     |
 
-In contrast, for smaller or lower-dimensional datasets like Airfoil and Red Wine, the time difference between the two methods becomes less pronounced. As observed in the Airfoil dataset, the time gap is limited to around 3 seconds (6%) . Interestingly, in the Red Wine dataset (which has a higher number of features but a significantly lower number of input samples compared to Abalone and White Wine), the Oracle is actually faster than LBM (SVR) to reach 60 iterations, despite its MSE remaining marginally higher. This suggests that in cases with limited input data but higher feature dimensionality, the overhead associated with the LBM's bundle maintenance and update processes can outweigh its benefits.
+Across all datasets, the LBM-based SVR generally achieves comparable MSE and converges to the same minimum as the Oracle. However, computational time varies depending on dataset size and dimensionality.
 
-Overall, LBM (SVR) appears to offer the best trade-off for prediction tasks involving a large number of input samples. However, when dealing with datasets characterized by a high number of features but a limited number of input data points, the Oracle tends to outperform LBM in terms of computational time, although its MSE is typically slightly higher. 
+- For **large, high-dimensional datasets** (e.g., *Abalone*, *White Wine*):
+  - The time difference is small, as both methods require substantial computation.
+  - LBM's overhead is less impactful, and convergence is similar.
+- For **small or low-dimensional datasets** (e.g., *Airfoil*, *Red Wine*):
+  - The Oracle is significantly faster (e.g., 1.7s vs. 14.7s for Airfoil, 2.6s vs. 61.8s for Red Wine).
+  - LBM's overhead dominates, leading to notable inefficiency.
+
+This shows that LBM is more competitive on complex problems, while its cost is harder to justify on simpler datasets.

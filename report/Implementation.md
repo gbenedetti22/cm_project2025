@@ -12,7 +12,7 @@ Subsequently, we moved our evaluation to larger and more complex real-world data
 Firstly, we define the SVR dual function, which computes both the function value `f` and the corresponding subgradient `g`:
 
 ```matlab
-function svr_dual_functon(alpha_hat, bundle, f_level, C):
+function svr_dual_functon(x, y, epsilon, K):
 Input:
     x			% input vector
     y			% target vector
@@ -33,27 +33,14 @@ Before training, the features are normalized.
 
 ## (A2) SVR general-purpose solver 
 
-For the implementation of a generic SVR solver, we formulated the dual problem using MATLAB’s lambda functions. Unlike quadprog, fmincon does not require explicit Hessian matrix definitions—a key advantage that significantly improves scalability for large-scale problems
+For the implementation of a generic SVR solver, we used the dual problem by solving it with a quadratic solver (MOSEK). In pseudo-code:
 
 ```matlab
-svr_dual =  lambda(x) { svr_dual_function(x, K, Y, epsilon) }
+Constraints = [-C <= alpha <= C, sum(alpha) == 0]
 
-# Starting point
-alpha0 = ZEROS(n, 1)
+Objective = svr_dual_functon(x, y, epsilon, K)
 
-# Inequality constraints (none in this case)
-A = EMPTY_MATRIX
-b = 0
-
-# Equality constraint: SUM(alpha) = 0
-Aeq = ONES(1, n)
-beq = 0
-
-# Bounds: -C <= alpha <= C
-lb = -C * ONES(n, 1)
-ub =  C * ONES(n, 1)
-
-alpha = QP_SOLVE(svr_dual, alpha0, A, b, Aeq, beq, lb, ub)
+alpha = optimize(Objective, Constraints)
 ```
 
  Once the execution is completed, we extract the **support vectors** from the solution.
@@ -212,7 +199,7 @@ function compute_lower_bound(bundle, C)
 
     % Build inequality constraints
     A = [TRANSPOSE(bundle.g), -ONES(m, 1)]
-    b = SUM(bundle.g .* bundle.z, 1)' - TRANSPOSE(bundle.f)
+    b = SUM(bundle.g .* bundle.alpha, 1)' - TRANSPOSE(bundle.f)
 
     % Define linear program
     objective = [ZEROS(n, 1); 1]
@@ -246,8 +233,9 @@ Input:
     tol         % convergence tolerance
     max_iter    % maximum number of iterations
 
+
 % Initialization
-f, g = svr_dual_function(alpha)
+f, g = svr_dual_functon(alpha, y, epsilon, K)
 f_best = f
 
 INIT_BUNDLE(bundle, alpha, f, g)
@@ -263,21 +251,17 @@ for iter = 1 to max_iter:
     alpha_new = mp_solve(alpha, bundle, level, C)
 
     % Evaluate the function and subgradient at alpha_new
-    f_new, g_new = svr_dual_function(alpha_new, K, y, epsilon)
+    f_new, g_new = svr_dual_functon(alpha_new, y, epsilon, K)
 
     % Check if the new point is acceptable
     if f_new < f_best:
         f_best = f_new
     
-    if f_new <= level:
-        alpha = alpha_new
-        f = f_new
-    
     % Update bundle
     ADD_TO_BUNDLE(bundle, alpha_new, f_new, g_new)
 
-    % Check for convergence
-    if ||alpha_new - alpha|| < tol:
+    % Check for convergence (distance between upper bound and lower bound)
+    if |(f_best - lb) / f_best| < tol:
         break
 
 return alpha  % Return the optimal solution
@@ -292,7 +276,7 @@ To evaluate the performance of our SVR (Support Vector Regression) model impleme
 Below, we present the predictive performance on the sine function as a representative example of the model’s generalization capabilities. The remaining functions (omitted for brevity) demonstrate behaviors fully aligned with the standard SVR implementation.
 
 - **Sine function**
-  $$Y = \sin(3X) + 0.1 \cdot \mathcal{N}(0, 1). $$
+  $$Y = \sin(3X) + 0.1 \cdot \mathcal{N}(0, 1).$$
   ![](./assets/sin_lbm.jpg)
 
 ### Training SVR with LBM on the Abalone Dataset
@@ -344,6 +328,8 @@ ub = SPARSE(CONCAT( C * ONES(n, 1),  f_level))
 
 #### Choosing the Solver: Is Quadprog Really the Best Option?
 
-The current implementation relies on **quadprog**, with a training time of approximately **50 seconds**, but alternative solvers could significantly improve time efficiency.
+The existing implementation relies on **quadprog**, which suffers from slow training times (~50 seconds) even on simple objective functions due to its generic, non-optimized approach.
 
-Further gains can be achieved by adopting **high-performance solvers** optimized for large-scale problems, as such alternatives leverage best algorithms and parallelization. This could reduce training times by **an order of magnitude** without compromising accuracy.
+To address this inefficiency, we switched to **MOSEK**, a high-performance solver specialized for large-scale optimization. Leveraging advanced algorithms and hardware-aware optimizations, MOSEK achieves a **~4x speedup** (reducing training time to ~12 seconds) while maintaining the same accuracy—making it ideal even for moderately complex problems.
+
+So, in the end, for both the **Oracle** and our **SVR with Level Bundle Method (LBM)**, we use **MOSEK** to ensure consistent efficiency.

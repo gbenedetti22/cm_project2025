@@ -1,3 +1,7 @@
+% Utility function that displays the (relative) gap during iterations. 
+% If the values differ, those with higher values are reduced by sampling 
+% based on the ones with lower values
+
 function plot_gap(f_values_oracle, f_values_bundle)
     n_oracle = length(f_values_oracle);
     n_bundle = length(f_values_bundle);
@@ -15,8 +19,9 @@ function plot_gap(f_values_oracle, f_values_bundle)
 
     figure;
     semilogy(1:n_common, abs(rel_gap), '-o', 'LineWidth', 2, 'DisplayName', 'Relative Gap');
-    xlabel('Iterazioni (normalizzate)');
+    xlabel('Iterations');
     ylabel('Relative Gap');
+    title("Relative Gap (Optimal Solution)", 'FontSize', 18);
     legend('Location', 'best', 'FontSize', 16);
     grid on;
 end

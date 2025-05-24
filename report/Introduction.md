@@ -8,7 +8,7 @@ This project focuses on the development and implementation of an SVR (Support Ve
 
 For the Master Problem of the **SVR with LBM**, the MATLAB function `quadprog` was used. This function is primarily designed for solving quadratic objective functions with linear terms.
 
-Instead, for the **general purpose SVR** the `fmincon` function was used since this function can solve non-linear problems, making it ideal for our use case.
+Instead, for the **general purpose SVR (Oracle)** we simply solved the dual function described in the following paragraphs, using a high efficiency solver.
 
 ## Support Vector for Regression (SVR)
 
@@ -198,7 +198,7 @@ f^{\text{level}} = f_{\text{lower}} + \theta * (f_{\text{upper}} - f_{\text{lowe
 $$
 Where $f_{\text{upper}}$ is the current best solution found at iteration $k$.
 
-**Can the lower bound diverge to infinity?** No, because the dual objective function is convex and continuous, and the optimization is carried out over a feasible region defined by box constraints (which impose $-C ≤ α_i ≤ C$) and the sum-to-zero constraint.
+**Can the lower bound diverge to infinity?** No, because the dual objective function is convex and continuous, and the optimization is carried out over a feasible region defined by box constraints (which impose $-C\le \alpha_i \le C$) and the sum-to-zero constraint.
 
 ### Equality Constraint
 

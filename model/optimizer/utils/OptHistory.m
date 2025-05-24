@@ -1,3 +1,5 @@
+% Object used to store in one place, all the values ​​useful for debugging
+
 classdef OptHistory < handle
     properties
         f_values = [];
